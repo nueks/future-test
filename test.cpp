@@ -25,118 +25,92 @@ class promise;
 template <>
 class promise<void>;
 
-template <typename T>
-inline future<T> make_future(T&& value)
-{
-	return future<T>(ready_future_marker(), std::forward<T>(value));
-}
+// template <typename T>
+// inline future<T> make_future(T&& value)
+// {
+// 	return future<T>(ready_future_marker(), std::forward<T>(value));
+// }
 
 
-template <typename T>
-inline future<T> make_future(std::exception_ptr ex) noexcept
-{
-	return future<T>(std::move(ex));
-}
+// template <typename T>
+// inline future<T> make_future(std::exception_ptr ex) noexcept
+// {
+// 	return future<T>(std::move(ex));
+// }
 
-template <typename T,
-		  typename Exception,
-		  typename  = std::enable_if_t<std::is_base_of<std::exception, Exception>::value> >
-inline future<T> make_future(Exception&& ex) noexcept
-{
-	return make_future<T>(std::make_exception_ptr(std::forward<Exception>(ex)));
-}
+// template <typename T,
+// 		  typename Exception,
+// 		  typename  = std::enable_if_t<std::is_base_of<std::exception, Exception>::value> >
+// inline future<T> make_future(Exception&& ex) noexcept
+// {
+// 	return make_future<T>(std::make_exception_ptr(std::forward<Exception>(ex)));
+// }
 
 
 template <typename T>
 struct futurize;
 
-template <typename T>
-struct futurize
-{
-	using type = future<T>;
-	using promise_type = promise<T>;
+// template <typename T>
+// struct futurize
+// {
+// 	using type = future<T>;
+// 	using promise_type = promise<T>;
 
-	template <typename Func, typename Arg>
-	static inline type apply(Func&& func, Arg&& arg) noexcept
-	{
-		try
-		{
-			return convert(std::forward<Func>(func)(std::forward<Arg>(arg)));
-		}
-		catch (...)
-		{
-			return type(std::current_exception());
-		}
-	}
+// 	template <typename Func, typename... Args>
+// 	static inline type apply(Func&& func, Args&&... args) noexcept
+// 	{
+// 		try
+// 		{
+// 			return convert(std::forward<Func>(func)(std::forward<Args>(args)...));
+// 		}
+// 		catch (...)
+// 		{
+// 			return make_future<T>(std::current_exception());
+// 		}
+// 	}
 
-	template <typename Func>
-	static inline type apply(Func&& func) noexcept
-	{
-		try
-		{
-			return convert(std::forward<Func>(func)());
-		}
-		catch (...)
-		{
-			return type(std::current_exception());
-		}
-	}
+// 	static inline type convert(T&& value)
+// 	{
+// 		//return type(std::move(value));
+// 		return make_future<T>(std::move(value));
+// 	}
 
-	static inline type convert(T&& value)
-	{
-		//return type(std::move(value));
-		return make_future<T>(std::move(value));
-	}
-
-	static inline type convert(type&& value)
-	{
-		return std::move(value);
-	}
-};
+// 	static inline type convert(type&& value)
+// 	{
+// 		return std::move(value);
+// 	}
+// };
 
 
-template <typename T>
-struct futurize<future<T> >
-{
-	using type = future<T>;
-	using promise_type = promise<T>;
+// template <typename T>
+// struct futurize<future<T> >
+// {
+// 	using type = future<T>;
+// 	using promise_type = promise<T>;
 
-	template <typename Func, typename Arg>
-	static inline type apply(Func&& func, Arg&& arg) noexcept
-	{
-		try
-		{
-			return convert(std::forward<Func>(func)(std::forward<Arg>(arg)));
-		}
-		catch (...)
-		{
-			return type(std::current_exception());
-		}
-	}
+// 	template <typename Func, typename... Args>
+// 	static inline type apply(Func&& func, Args&&... args) noexcept
+// 	{
+// 		try
+// 		{
+// 			return convert(std::forward<Func>(func)(std::forward<Args>(args)...));
+// 		}
+// 		catch (...)
+// 		{
+// 			return make_future<T>(std::current_exception());
+// 		}
+// 	}
 
-	template <typename Func>
-	static inline type apply(Func&& func) noexcept
-	{
-		try
-		{
-			return convert(std::forward<Func>(func)());
-		}
-		catch (...)
-		{
-			return type(std::current_exception());
-		}
-	}
+// 	static inline type convert(T&& value)
+// 	{
+// 		return make_future<T>(std::move(value));
+// 	}
 
-	static inline type convert(T&& value)
-	{
-		return type(std::move(value));
-	}
-
-	static inline type convert(type&& value)
-	{
-		return std::move(value);
-	}
-};
+// 	static inline type convert(type&& value)
+// 	{
+// 		return std::move(value);
+// 	}
+// };
 
 template <typename T>
 using futurize_t = typename futurize<T>::type;
@@ -583,6 +557,28 @@ private:
 	}
 };
 
+template <typename T>
+inline future<T> make_future(T&& value)
+{
+	return future<T>(ready_future_marker(), std::forward<T>(value));
+}
+
+
+template <typename T>
+inline future<T> make_future(std::exception_ptr ex) noexcept
+{
+	return future<T>(std::move(ex));
+}
+
+template <typename T,
+		  typename Exception,
+		  typename  = std::enable_if_t<std::is_base_of<std::exception, Exception>::value> >
+inline future<T> make_future(Exception&& ex) noexcept
+{
+	return make_future<T>(std::make_exception_ptr(std::forward<Exception>(ex)));
+}
+
+
 //template <>
 inline future<void> make_future()
 {
@@ -595,37 +591,84 @@ inline future<void> make_future()
 	return future<void>(ready_future_marker());
 }
 
+template <typename T>
+struct futurize
+{
+	using type = future<T>;
+	using promise_type = promise<T>;
+
+	template <typename Func, typename... Args>
+	static inline type apply(Func&& func, Args&&... args) noexcept
+	{
+		try
+		{
+			return convert(std::forward<Func>(func)(std::forward<Args>(args)...));
+		}
+		catch (...)
+		{
+			return make_future<T>(std::current_exception());
+		}
+	}
+
+	static inline type convert(T&& value)
+	{
+		//return type(std::move(value));
+		return make_future<T>(std::move(value));
+	}
+
+	static inline type convert(type&& value)
+	{
+		return std::move(value);
+	}
+};
+
+template <typename T>
+struct futurize<future<T> >
+{
+	using type = future<T>;
+	using promise_type = promise<T>;
+
+	template <typename Func, typename... Args>
+	static inline type apply(Func&& func, Args&&... args) noexcept
+	{
+		try
+		{
+			return convert(std::forward<Func>(func)(std::forward<Args>(args)...));
+		}
+		catch (...)
+		{
+			return make_future<T>(std::current_exception());
+		}
+	}
+
+	static inline type convert(T&& value)
+	{
+		return make_future<T>(std::move(value));
+	}
+
+	static inline type convert(type&& value)
+	{
+		return std::move(value);
+	}
+};
+
 template <>
 struct futurize<void>
 {
 	using type = future<void>;
 	using promise_type = promise<void>;
 
-	template <typename Func, typename Arg>
-	static inline type apply(Func&& func, Arg&& arg) noexcept
+	template <typename Func, typename... Args>
+	static inline type apply(Func&& func, Args&&... args) noexcept
 	{
 		try
 		{
-			std::forward<Func>(func)(std::forward<Arg>(arg));
+			std::forward<Func>(func)(std::forward<Args>(args)...);
 			return convert();
 		}
 		catch (...)
 		{
-			return type(std::current_exception());
-		}
-	}
-
-	template <typename Func>
-	static inline type apply(Func&& func) noexcept
-	{
-		try
-		{
-			std::forward<Func>(func)();
-			return convert();
-		}
-		catch (...)
-		{
-			return type(std::current_exception());
+			return make_future<void>(std::current_exception());
 		}
 	}
 
@@ -639,7 +682,6 @@ struct futurize<void>
 		return std::move(value);
 	}
 };
-
 
 
 template <typename T>
@@ -899,9 +941,15 @@ int main(int argc, char* argv[])
 	auto fut1 = ex::make_future(3);
 	fut1.then(
 		[](int&& n){
-			std::cout << "void return: " << n << std::endl;
+			std::cout << "int return: " << n << std::endl;
+			return ex::make_future<int>(10);
+		}
+	).then(
+		[](int&& n){
+			std::cout << "void return2: " << n << std::endl;
 		}
 	);
+
 	auto fut2 = ex::make_future<int>(4);
 	auto i = fut2.then(
 		[](int&& n){
