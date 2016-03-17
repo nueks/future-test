@@ -25,92 +25,8 @@ class promise;
 template <>
 class promise<void>;
 
-// template <typename T>
-// inline future<T> make_future(T&& value)
-// {
-// 	return future<T>(ready_future_marker(), std::forward<T>(value));
-// }
-
-
-// template <typename T>
-// inline future<T> make_future(std::exception_ptr ex) noexcept
-// {
-// 	return future<T>(std::move(ex));
-// }
-
-// template <typename T,
-// 		  typename Exception,
-// 		  typename  = std::enable_if_t<std::is_base_of<std::exception, Exception>::value> >
-// inline future<T> make_future(Exception&& ex) noexcept
-// {
-// 	return make_future<T>(std::make_exception_ptr(std::forward<Exception>(ex)));
-// }
-
-
 template <typename T>
 struct futurize;
-
-// template <typename T>
-// struct futurize
-// {
-// 	using type = future<T>;
-// 	using promise_type = promise<T>;
-
-// 	template <typename Func, typename... Args>
-// 	static inline type apply(Func&& func, Args&&... args) noexcept
-// 	{
-// 		try
-// 		{
-// 			return convert(std::forward<Func>(func)(std::forward<Args>(args)...));
-// 		}
-// 		catch (...)
-// 		{
-// 			return make_future<T>(std::current_exception());
-// 		}
-// 	}
-
-// 	static inline type convert(T&& value)
-// 	{
-// 		//return type(std::move(value));
-// 		return make_future<T>(std::move(value));
-// 	}
-
-// 	static inline type convert(type&& value)
-// 	{
-// 		return std::move(value);
-// 	}
-// };
-
-
-// template <typename T>
-// struct futurize<future<T> >
-// {
-// 	using type = future<T>;
-// 	using promise_type = promise<T>;
-
-// 	template <typename Func, typename... Args>
-// 	static inline type apply(Func&& func, Args&&... args) noexcept
-// 	{
-// 		try
-// 		{
-// 			return convert(std::forward<Func>(func)(std::forward<Args>(args)...));
-// 		}
-// 		catch (...)
-// 		{
-// 			return make_future<T>(std::current_exception());
-// 		}
-// 	}
-
-// 	static inline type convert(T&& value)
-// 	{
-// 		return make_future<T>(std::move(value));
-// 	}
-
-// 	static inline type convert(type&& value)
-// 	{
-// 		return std::move(value);
-// 	}
-// };
 
 template <typename T>
 using futurize_t = typename futurize<T>::type;
@@ -376,40 +292,6 @@ public:
 	future(future&& x) noexcept;
 	future(promise<void>* p);
 
-	// future(future&& x) noexcept
-	// 	: impl_(std::move(x.impl_)),
-	// 	  promise_(std::exchange(x.promise_, nullptr)),
-	// 	  state_(std::exchange(x.state_, state::invalid))
-	// {
-	// 	switch (state_)
-	// 	{
-	// 		case state::invalid:
-	// 			break;
-	// 		case state::future:
-	// 			break;
-	// 		case state::result:
-	// 			break;
-	// 		case state::exception:
-	// 			new (&ex_) std::exception_ptr(std::move(x.ex_));
-	// 			x.ex_.~exception_ptr();
-	// 			break;
-	// 		default:
-	// 			abort();
-	// 	}
-
-	// 	if (promise_)
-	// 	{
-	// 		promise_->future_ = this;
-	// 	}
-	// }
-
-	// future(promise<void>* p)
-	// {
-	// 	impl_ = p->impl_.get_future();
-	// 	promise_ = p;
-	// 	p->future_ = this;
-	// }
-
 	future(ready_future_marker) noexcept
 	{
 		state_ = state::result;
@@ -563,7 +445,6 @@ inline future<T> make_future(T&& value)
 	return future<T>(ready_future_marker(), std::forward<T>(value));
 }
 
-
 template <typename T>
 inline future<T> make_future(std::exception_ptr ex) noexcept
 {
@@ -578,8 +459,6 @@ inline future<T> make_future(Exception&& ex) noexcept
 	return make_future<T>(std::make_exception_ptr(std::forward<Exception>(ex)));
 }
 
-
-//template <>
 inline future<void> make_future()
 {
 	return future<void>(ready_future_marker());
