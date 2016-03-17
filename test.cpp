@@ -7,6 +7,7 @@
 #include <thread>
 #include <chrono>
 #include <cassert>
+#include <memory>
 
 namespace ex
 {
@@ -40,6 +41,32 @@ enum class future_status
 };
 
 
+class task
+{
+public:
+	virtual ~task() noexcept {}
+	virtual void run() noexcept = 0;
+};
+
+template <typename Func, typename T>
+struct continuation : public task
+{
+	continuation(Func&& func, T* arg)
+		: func_(std::move(func)),
+		  arg_(arg)
+	{}
+
+	virtual void run() noexcept override
+	{
+		func_(arg_);
+	}
+
+	Func func_;
+	T* arg_;
+};
+
+
+
 template <typename T>
 class future
 {
@@ -64,7 +91,7 @@ private:
 		std::exception_ptr ex;
 	} u_;
 
-	std::function<void(future*)> continuation_;
+	std::unique_ptr<task> continuation_;
 
 public:
 	future() noexcept : impl_(std::future<T>()) {}
@@ -211,7 +238,6 @@ public:
 		{
 			try
 			{
-				//return Result(func(std::move(u_.value)));
 				return futurator::apply(std::forward<Func>(func), std::move(u_.value));
 			}
 			catch (...)
@@ -226,25 +252,39 @@ public:
 			return Result(u_.ex);
 		}
 
-		// if (state_ == state::future)
-		// {
-		// 	ex::promise<Result> pr;
-		// 	auto fut = pr.get_future();
-		// 	continuation_ = [pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
-		// 		try
-		// 		{
-		// 			pr.set_value(func(fut.get()));
-		// 		}
-		// 		catch (...)
-		// 		{
-		// 			pr.set_exception(std::current_exception());
-		// 		}
-		// 	};
-		// 	return fut;
-		// }
+		if (state_ == state::future)
+		{
+			typename futurator::promise_type pr;
+
+			auto fut = pr.get_future();
+			schedule([pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
+				try
+				{
+					// auto f = futurator::apply(func, fut->get());
+					// pr.set_value(f.get());
+
+					futurator::apply(func, fut->get()).forward_to(pr);
+				}
+				catch (...)
+				{
+					pr.set_exception(std::current_exception());
+				}
+				}
+			);
+			return fut;
+		}
 	}
 
+	template <typename Func>
+	void schedule(Func&& func)
+	{
+		continuation_ = std::make_unique<continuation<Func, future<T> > >(std::forward<Func>(func), this);
+	}
 
+	void forward_to(promise<T>& pr)
+	{
+		pr.set_value(get());
+	}
 
 
 private:
@@ -284,7 +324,7 @@ private:
 
 	std::exception_ptr ex_;
 
-	std::function<void(future*)> continuation_;
+	std::unique_ptr<task> continuation_;
 
 public:
 	future() noexcept : impl_(std::future<void>()) {}
@@ -408,24 +448,33 @@ public:
 			return Result(ex_);
 		}
 
-		// if (state_ == state::future)
-		// {
-		// 	ex::promise<Result> pr;
-		// 	auto fut = pr.get_future();
-		// 	continuation_ = [pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
-		// 		try
-		// 		{
-		// 			pr.set_value(func(fut.get()));
-		// 		}
-		// 		catch (...)
-		// 		{
-		// 			pr.set_exception(std::current_exception());
-		// 		}
-		// 	};
-		// 	return fut;
-		// }
+		if (state_ == state::future)
+		{
+			typename futurator::promise_type pr;
+
+			auto fut = pr.get_future();
+			schedule([pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
+				try
+				{
+					futurator::apply(func).forward_to(pr);
+				}
+				catch (...)
+				{
+					pr.set_exception(std::current_exception());
+				}
+				}
+			);
+			return fut;
+		}
 	}
 
+	template <typename Func>
+	void schedule(Func&& func)
+	{
+		continuation_ = std::make_unique<continuation<Func, future<void> > >(std::forward<Func>(func), this);
+	}
+
+	void forward_to(promise<void>& pr);
 
 
 
@@ -438,6 +487,8 @@ private:
 		state_ = state::exception;
 	}
 };
+
+
 
 template <typename T>
 inline future<T> make_future(T&& value)
@@ -470,6 +521,10 @@ inline future<void> make_future()
 	return future<void>(ready_future_marker());
 }
 
+
+
+
+
 template <typename T>
 struct futurize
 {
@@ -491,7 +546,6 @@ struct futurize
 
 	static inline type convert(T&& value)
 	{
-		//return type(std::move(value));
 		return make_future<T>(std::move(value));
 	}
 
@@ -523,6 +577,42 @@ struct futurize<future<T> >
 	static inline type convert(T&& value)
 	{
 		return make_future<T>(std::move(value));
+	}
+
+	static inline type convert()
+	{
+		return make_future<void>();
+	}
+
+	static inline type convert(type&& value)
+	{
+		return std::move(value);
+	}
+};
+
+template <>
+struct futurize<future<void> >
+{
+	using type = future<void>;
+	using promise_type = promise<void>;
+
+	template <typename Func, typename... Args>
+	static inline type apply(Func&& func, Args&&... args) noexcept
+	{
+		try
+		{
+			std::forward<Func>(func)(std::forward<Args>(args)...);
+			return convert();
+		}
+		catch (...)
+		{
+			return make_future<void>(std::current_exception());
+		}
+	}
+
+	static inline type convert()
+	{
+		return make_future<void>();
 	}
 
 	static inline type convert(type&& value)
@@ -561,6 +651,10 @@ struct futurize<void>
 		return std::move(value);
 	}
 };
+
+
+
+
 
 
 template <typename T>
@@ -773,6 +867,10 @@ future<void>::future(promise<void>* p)
 	p->future_ = this;
 }
 
+void future<void>::forward_to(promise<void>& pr)
+{
+	pr.set_value();
+}
 
 } // namespace ex
 
@@ -783,82 +881,110 @@ future<void>::future(promise<void>* p)
 
 int main(int argc, char* argv[])
 {
-	ex::promise<int> pro;
-	ex::future<int> fut = pro.get_future();
+	// ex::promise<int> pro;
+	// ex::future<int> fut = pro.get_future();
 
-	std::thread thd(
-		[pro = std::move(pro)]() mutable {
-			sleep(1);
-			pro.set_exception(std::runtime_error("Example"));
-		}
-	);
+	// std::thread thd(
+	// 	[pro = std::move(pro)]() mutable {
+	// 		sleep(1);
+	// 		pro.set_exception(std::runtime_error("Example"));
+	// 	}
+	// );
 
-	ex::future_status status = fut.wait_for(std::chrono::seconds(5));
-	if (status == ex::future_status::deferred) {
-		std::cout << "deferred" << std::endl;
-	}
-	if (status == ex::future_status::timeout) {
-		std::cout << "timeout" << std::endl;
-	}
-	if (status == ex::future_status::ready) {
-		std::cout << "ready" << std::endl;
-	}
+	// ex::future_status status = fut.wait_for(std::chrono::seconds(5));
+	// if (status == ex::future_status::deferred) {
+	// 	std::cout << "deferred" << std::endl;
+	// }
+	// if (status == ex::future_status::timeout) {
+	// 	std::cout << "timeout" << std::endl;
+	// }
+	// if (status == ex::future_status::ready) {
+	// 	std::cout << "ready" << std::endl;
+	// }
 
-	try
-	{
-		std::cout << fut.get() << std::endl;
-	}
-	catch(const std::exception& e)
-	{
-		std::cout << e.what() << std::endl;
-	}
-	thd.join();
+	// try
+	// {
+	// 	std::cout << fut.get() << std::endl;
+	// }
+	// catch(const std::exception& e)
+	// {
+	// 	std::cout << e.what() << std::endl;
+	// }
+	// thd.join();
 
-
-
-	//ex::future<void> fut1(ex::ready_future_marker());
-	auto fut1 = ex::make_future(3);
-	fut1.then(
-		[](int&& n){
-			std::cout << "int return: " << n << std::endl;
-			return ex::make_future<int>(10);
+	auto fut0 = ex::make_future<int>(1);
+	fut0.then(
+		[](int&& n) {
+			std::cout << "then1: " << n << std::endl;
 		}
 	).then(
-		[](int&& n){
-			std::cout << "void return2: " << n << std::endl;
+		[]() {
+			std::cout << "then2" << std::endl;
+			return 10;
 		}
-	);
 
-	auto fut2 = ex::make_future<int>(4);
-	auto i = fut2.then(
-		[](int&& n){
-			std::cout << "continuation: " << n << std::endl;
-			//return ex::future<std::string>(ex::ready_future_marker(), "test");
+	).then(
+		[](int&& n) {
+			std::cout << "then3: " << n << std::endl;
 			return ex::make_future<std::string>("test");
 		}
-	).get();
-
-	std::cout << "i = " << i << std::endl;
-
-	// std::cout << fut2.get() << std::endl;
-
-	//ex::future<int> fut3(std::runtime_error("Example3"));
-	auto fut3 = ex::make_future<int>(std::runtime_error("Example3"));
-	auto fut4 = fut3.then(
-		[](int&& n){
-			std::cout << "exception continuation: " << n << std::endl;
-			return 1;
+	).then(
+		[](std::string&& s) {
+			std::cout << "then4: " << s << std::endl;
+			throw std::runtime_error("error");
 		}
-	);
+	).get();
+		// then(
+	// 	[](){
+	// 		std::cout << "then5: " << std::endl;
+	// 	}
+	// );
 
-	try
-	{
-		std::cout << fut4.get() << std::endl;
-	}
-	catch (const std::exception& e)
-	{
-		std::cout << e.what() << std::endl;
-	}
+
+
+	// auto fut1 = ex::make_future(3);
+	// fut1.then(
+	// 	[](int&& n){
+	// 		std::cout << "int return: " << n << std::endl;
+	// 		return ex::make_future<int>(10);
+	// 	}
+	// ).then(
+	// 	[](int&& n){
+	// 		std::cout << "void return2: " << n << std::endl;
+	// 		return 1;
+	// 	}
+	// );
+
+	// auto fut2 = ex::make_future<int>(4);
+	// auto i = fut2.then(
+	// 	[](int&& n){
+	// 		std::cout << "continuation: " << n << std::endl;
+	// 		//return ex::future<std::string>(ex::ready_future_marker(), "test");
+	// 		return ex::make_future<std::string>("test");
+	// 	}
+	// ).get();
+
+	// std::cout << "i = " << i << std::endl;
+
+	// // std::cout << fut2.get() << std::endl;
+
+	// //ex::future<int> fut3(std::runtime_error("Example3"));
+	// auto fut3 = ex::make_future<int>(std::runtime_error("Example3"));
+	// auto fut4 = fut3.then(
+	// 	[](int&& n){
+	// 		std::cout << "exception continuation: " << n << std::endl;
+	// 		return 1;
+	// 	}
+	// );
+
+	// try
+	// {
+	// 	std::cout << fut4.get() << std::endl;
+	// }
+	// catch (const std::exception& e)
+	// {
+	// 	std::cout << e.what() << std::endl;
+	// }
 
 
 	return EXIT_SUCCESS;
