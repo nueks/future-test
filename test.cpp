@@ -33,6 +33,11 @@ template <typename T>
 using futurize_t = typename futurize<T>::type;
 
 
+template <typename T> struct is_future : std::false_type {};
+template <typename T> struct is_future<future<T> > : std::true_type {};
+
+
+
 enum class future_status
 {
 	ready,
@@ -179,7 +184,6 @@ public:
 
 	T get()
 	{
-		std::cout << "get" << std::endl;
 		switch (state_)
 		{
 			case state::invalid:
@@ -230,10 +234,12 @@ public:
 		return future_status::ready;
 	}
 
-	template <typename Func, typename Result = futurize_t<std::result_of_t<Func(T&&)>> >
+	template <typename Func,
+			  typename Result = futurize_t<std::result_of_t<Func(T)> >,
+			  typename = std::enable_if_t<!ex::is_future<T>::value> >
 	Result then(Func&& func) noexcept
 	{
-		using futurator = futurize<std::result_of_t<Func(T&&)> >;
+		using futurator = futurize<std::result_of_t<Func(T)> >;
 		if (state_ == state::result)
 		{
 			try
@@ -242,7 +248,6 @@ public:
 			}
 			catch (...)
 			{
-				std::cout << "exception....?" << std::endl;
 				return Result(std::current_exception());
 			}
 		}
@@ -258,22 +263,57 @@ public:
 
 			auto fut = pr.get_future();
 			schedule([pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
-				try
-				{
-					// auto f = futurator::apply(func, fut->get());
-					// pr.set_value(f.get());
-
-					futurator::apply(func, fut->get()).forward_to(pr);
-				}
-				catch (...)
-				{
-					pr.set_exception(std::current_exception());
-				}
+					try
+					{
+						futurator::apply(func, fut->get()).forward_to(pr);
+					}
+					catch (...)
+					{
+						pr.set_exception(std::current_exception());
+					}
 				}
 			);
 			return fut;
 		}
 	}
+
+
+	template <typename Func, typename Result = futurize_t<std::result_of_t<Func(future)> > >
+	Result then(Func&& func) noexcept
+	{
+		using futurator = futurize<std::result_of_t<Func(future)> >;
+		if (state_ == state::result || state_ == state::exception)
+		{
+			try
+			{
+				return futurator::apply(std::forward<Func>(func), std::move(*this));
+			}
+			catch (...)
+			{
+				return Result(std::current_exception());
+			}
+		}
+
+		if (state_ == state::future)
+		{
+			typename futurator::promise_type pr;
+			auto fut = pr.get_future();
+			schedule(
+				[pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
+					try
+					{
+						futurator::apply(func, std::move(*fut)).forward_to(pr);
+					}
+					catch (...)
+					{
+						pr.set_exception(std::current_exception());
+					}
+				}
+			);
+			return fut;
+		}
+	}
+
 
 	template <typename Func>
 	void schedule(Func&& func)
@@ -374,7 +414,6 @@ public:
 
 	void get()
 	{
-		std::cout << "get" << std::endl;
 		switch (state_)
 		{
 			case state::invalid:
@@ -438,7 +477,6 @@ public:
 			}
 			catch (...)
 			{
-				std::cout << "exception....?" << std::endl;
 				return Result(std::current_exception());
 			}
 		}
@@ -454,14 +492,14 @@ public:
 
 			auto fut = pr.get_future();
 			schedule([pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
-				try
-				{
-					futurator::apply(func).forward_to(pr);
-				}
-				catch (...)
-				{
-					pr.set_exception(std::current_exception());
-				}
+					try
+					{
+						futurator::apply(func).forward_to(pr);
+					}
+					catch (...)
+					{
+						pr.set_exception(std::current_exception());
+					}
 				}
 			);
 			return fut;
@@ -914,8 +952,8 @@ int main(int argc, char* argv[])
 
 	auto fut0 = ex::make_future<int>(1);
 	fut0.then(
-		[](int&& n) {
-			std::cout << "then1: " << n << std::endl;
+		[](ex::future<int> n) {
+			std::cout << "then1: " << n.get() << std::endl;
 		}
 	).then(
 		[]() {
@@ -924,16 +962,29 @@ int main(int argc, char* argv[])
 		}
 
 	).then(
-		[](int&& n) {
+		[](int n) {
 			std::cout << "then3: " << n << std::endl;
 			return ex::make_future<std::string>("test");
 		}
 	).then(
-		[](std::string&& s) {
+		[](std::string s) {
 			std::cout << "then4: " << s << std::endl;
 			throw std::runtime_error("error");
+			return std::string("test");
 		}
-	).get();
+	).then(
+		[](ex::future<std::string> fut) {
+			try
+			{
+				std::cout << fut.get() << std::endl;
+			}
+			catch (...)
+			{
+				std::cout << "!!!!!!!!!!!" << std::endl;
+
+			}
+		}
+	);
 		// then(
 	// 	[](){
 	// 		std::cout << "then5: " << std::endl;
