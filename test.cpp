@@ -278,7 +278,8 @@ public:
 	}
 
 
-	template <typename Func, typename Result = futurize_t<std::result_of_t<Func(future)> > >
+	template <typename Func,
+			  typename Result = futurize_t<std::result_of_t<Func(future)> > >
 	Result then(Func&& func) noexcept
 	{
 		using futurator = futurize<std::result_of_t<Func(future)> >;
@@ -465,7 +466,9 @@ public:
 		return future_status::ready;
 	}
 
-	template <typename Func, typename Result = futurize_t<std::result_of_t<Func()>> >
+	//template <typename Func, typename Result = futurize_t<std::result_of_t<Func()>> >
+	template <typename Func,
+			  typename Result = futurize_t<std::result_of_t<Func()> > >
 	Result then(Func&& func) noexcept
 	{
 		using futurator = futurize<std::result_of_t<Func()> >;
@@ -495,6 +498,45 @@ public:
 					try
 					{
 						futurator::apply(func).forward_to(pr);
+					}
+					catch (...)
+					{
+						pr.set_exception(std::current_exception());
+					}
+				}
+			);
+			return fut;
+		}
+	}
+
+	template <typename T,
+			  typename Func,
+			  typename Result = futurize_t<std::result_of_t<Func(T)> >,
+			  typename = std::enable_if_t<is_future<T>::value> >
+	Result then(Func&& func) noexcept
+	{
+		using futurator = futurize<std::result_of_t<Func(T)> >;
+		if (state_ == state::result || state_ == state::exception)
+		{
+			try
+			{
+				return futurator::apply(std::forward<Func>(func), std::move(*this));
+			}
+			catch (...)
+			{
+				return Result(std::current_exception());
+			}
+		}
+
+		if (state_ == state::future)
+		{
+			typename futurator::promise_type pr;
+			auto fut = pr.get_future();
+			schedule(
+				[pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
+					try
+					{
+						futurator::apply(func, std::move(*fut)).forward_to(pr);
 					}
 					catch (...)
 					{
