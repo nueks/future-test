@@ -476,13 +476,13 @@ private:
 
 
 template <typename T>
-inline future<T> make_future(T&& value)
+inline future<T> make_ready_future(T&& value)
 {
 	return future<T>(ready_future_marker(), std::forward<T>(value));
 }
 
 template <typename T>
-inline future<T> make_future(std::exception_ptr ex) noexcept
+inline future<T> make_ready_future(std::exception_ptr ex) noexcept
 {
 	return future<T>(std::move(ex));
 }
@@ -490,18 +490,18 @@ inline future<T> make_future(std::exception_ptr ex) noexcept
 template <typename T,
 		  typename Exception,
 		  typename  = std::enable_if_t<std::is_base_of<std::exception, Exception>::value> >
-inline future<T> make_future(Exception&& ex) noexcept
+inline future<T> make_ready_future(Exception&& ex) noexcept
 {
-	return make_future<T>(std::make_exception_ptr(std::forward<Exception>(ex)));
+	return make_ready_future<T>(std::make_exception_ptr(std::forward<Exception>(ex)));
 }
 
-inline future<void> make_future()
+inline future<void> make_ready_future()
 {
 	return future<void>(ready_future_marker());
 }
 
 template <typename T>
-inline future<void> make_future()
+inline future<void> make_ready_future()
 {
 	return future<void>(ready_future_marker());
 }
@@ -525,13 +525,13 @@ struct futurize
 		}
 		catch (...)
 		{
-			return make_future<T>(std::current_exception());
+			return make_ready_future<T>(std::current_exception());
 		}
 	}
 
 	static inline type convert(T&& value)
 	{
-		return make_future<T>(std::move(value));
+		return make_ready_future<T>(std::move(value));
 	}
 
 	static inline type convert(type&& value)
@@ -555,18 +555,18 @@ struct futurize<future<T> >
 		}
 		catch (...)
 		{
-			return make_future<T>(std::current_exception());
+			return make_ready_future<T>(std::current_exception());
 		}
 	}
 
 	static inline type convert(T&& value)
 	{
-		return make_future<T>(std::move(value));
+		return make_ready_future<T>(std::move(value));
 	}
 
 	static inline type convert()
 	{
-		return make_future<void>();
+		return make_ready_future<void>();
 	}
 
 	static inline type convert(type&& value)
@@ -591,13 +591,13 @@ struct futurize<future<void> >
 		}
 		catch (...)
 		{
-			return make_future<void>(std::current_exception());
+			return make_ready_future<void>(std::current_exception());
 		}
 	}
 
 	static inline type convert()
 	{
-		return make_future<void>();
+		return make_ready_future<void>();
 	}
 
 	static inline type convert(type&& value)
@@ -622,13 +622,13 @@ struct futurize<void>
 		}
 		catch (...)
 		{
-			return make_future<void>(std::current_exception());
+			return make_ready_future<void>(std::current_exception());
 		}
 	}
 
 	static inline type convert()
 	{
-		return make_future<void>();
+		return make_ready_future<void>();
 	}
 
 	static inline type convert(type&& value)
@@ -920,7 +920,7 @@ int main(int argc, char* argv[])
 			}
 		);
 
-		// auto fut = ex::make_future<void>();
+		// auto fut = ex::make_ready_future<void>();
 
 		//std::cout << "fut: " << &fut << std::endl;
 		auto a = fut.then(
@@ -999,7 +999,7 @@ int main(int argc, char* argv[])
 	}
 
 
-	auto fut0 = ex::make_future<int>(1);
+	auto fut0 = ex::make_ready_future<int>(1);
 	fut0.then(
 		[](ex::future<int> n) {
 			std::cout << "then1: " << n.get() << std::endl;
@@ -1013,7 +1013,7 @@ int main(int argc, char* argv[])
 	).then(
 		[](ex::future<int> n) {
 			std::cout << "then3: " << n.get() << std::endl;
-			return ex::make_future<std::string>("test");
+			return ex::make_ready_future<std::string>("test");
 		}
 	).then(
 		[](ex::future<std::string> s) {
@@ -1040,11 +1040,11 @@ int main(int argc, char* argv[])
 
 
 
-	auto fut1 = ex::make_future(3);
+	auto fut1 = ex::make_ready_future(3);
 	fut1.then(
 		[](ex::future<int> n){
 			std::cout << "int return: " << n.get() << std::endl;
-			return ex::make_future<int>(10);
+			return ex::make_ready_future<int>(10);
 		}
 	).then(
 		[](ex::future<int> n){
@@ -1053,12 +1053,12 @@ int main(int argc, char* argv[])
 		}
 	);
 
-	auto fut2 = ex::make_future<int>(4);
+	auto fut2 = ex::make_ready_future<int>(4);
 	auto i = fut2.then(
 		[](ex::future<int> n){
 			std::cout << "continuation: " << n.get() << std::endl;
 			//return ex::future<std::string>(ex::ready_future_marker(), "test");
-			return ex::make_future<std::string>("test");
+			return ex::make_ready_future<std::string>("test");
 		}
 	).get();
 
@@ -1067,7 +1067,7 @@ int main(int argc, char* argv[])
 	// std::cout << fut2.get() << std::endl;
 
 	//ex::future<int> fut3(std::runtime_error("Example3"));
-	auto fut3 = ex::make_future<int>(std::runtime_error("Example3"));
+	auto fut3 = ex::make_ready_future<int>(std::runtime_error("Example3"));
 	auto fut4 = fut3.then(
 		[](ex::future<int> n){
 			std::cout << "exception continuation: " << n.get() << std::endl;
