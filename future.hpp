@@ -268,7 +268,7 @@ public:
 					}
 				}
 			);
-			return std::move(fut);
+			return fut;
 		}
 	}
 
@@ -287,6 +287,7 @@ public:
 
 private:
 	void set(T&& value) noexcept
+
 	{
 		assert(state_ == state::future);
 		new (&u_.value) T(std::move(value));
@@ -360,7 +361,7 @@ public:
 			case state::result:
 				break;
 			case state::exception:
-				ex_.~exception_ptr();
+				//ex_.~exception_ptr();
 				break;
 			default:
 				abort();
@@ -443,10 +444,10 @@ public:
 			typename futurator::promise_type pr;
 			auto fut = pr.get_future();
 			schedule(
-				[pr = std::move(pr), func = std::forward<Func>(func)](future* fut) mutable {
+				[pr = std::move(pr), func = std::forward<Func>(func)](future* f) mutable {
 					try
 					{
-						futurator::apply(func, std::move(*fut)).forward_to(pr);
+						futurator::apply(func, std::move(*f)).forward_to(pr);
 					}
 					catch (...)
 					{
@@ -470,7 +471,8 @@ private:
 	void set_exception(std::exception_ptr ex) noexcept
 	{
 		assert(state_ == state::future);
-		new (&ex_) std::exception_ptr(std::move(ex));
+		ex_ = std::move(ex);
+		//new (&ex_) std::exception_ptr(std::move(ex));
 		state_ = state::exception;
 	}
 };
@@ -536,10 +538,10 @@ struct futurize
 		return make_ready_future<T>(std::move(value));
 	}
 
-	static inline type convert(type&& value)
-	{
-		return std::move(value);
-	}
+	// static inline type convert(type&& value)
+	// {
+	// 	return std::move(value);
+	// }
 };
 
 template <typename T>
@@ -561,15 +563,15 @@ struct futurize<future<T> >
 		}
 	}
 
-	static inline type convert(T&& value)
-	{
-		return make_ready_future<T>(std::move(value));
-	}
+	// static inline type convert(T&& value)
+	// {
+	// 	return make_ready_future<T>(std::move(value));
+	// }
 
-	static inline type convert()
-	{
-		return make_ready_future<void>();
-	}
+	// static inline type convert()
+	// {
+	// 	return make_ready_future<void>();
+	// }
 
 	static inline type convert(type&& value)
 	{
@@ -588,8 +590,8 @@ struct futurize<future<void> >
 	{
 		try
 		{
-			std::forward<Func>(func)(std::forward<Args>(args)...);
-			return convert();
+			return convert(std::forward<Func>(func)(std::forward<Args>(args)...));
+			//return convert();
 		}
 		catch (...)
 		{
@@ -597,10 +599,10 @@ struct futurize<future<void> >
 		}
 	}
 
-	static inline type convert()
-	{
-		return make_ready_future<void>();
-	}
+	// static inline type convert()
+	// {
+	// 	return make_ready_future<void>();
+	// }
 
 	static inline type convert(type&& value)
 	{
@@ -633,10 +635,10 @@ struct futurize<void>
 		return make_ready_future<void>();
 	}
 
-	static inline type convert(type&& value)
-	{
-		return std::move(value);
-	}
+	// static inline type convert(type&& value)
+	// {
+	// 	return std::move(value);
+	// }
 };
 
 
@@ -652,15 +654,16 @@ class promise
 
 private:
 	std::promise<T> impl_;
-	future<T>* future_ = nullptr;
-	std::unique_ptr<task> continuation_;
+	future<T>* future_{nullptr};
+	std::unique_ptr<task> continuation_{nullptr};
 
 public:
 	promise() noexcept {}
 
 	promise(promise&& x) noexcept
 		: impl_(std::move(x.impl_)),
-		  future_(std::exchange(x.future_, nullptr))
+		  future_(std::exchange(x.future_, nullptr)),
+		  continuation_(std::exchange(x.continuation_, nullptr))
 	{
 		if (future_)
 			future_->promise_ = this;
@@ -763,15 +766,16 @@ class promise<void>
 
 private:
 	std::promise<void> impl_;
-	future<void>* future_ = nullptr;
-	std::unique_ptr<task> continuation_;
+	future<void>* future_{nullptr};
+	std::unique_ptr<task> continuation_{nullptr};
 
 public:
 	promise() noexcept {}
 
 	promise(promise&& x) noexcept
 		: impl_(std::move(x.impl_)),
-		  future_(std::exchange(x.future_, nullptr))
+		  future_(std::exchange(x.future_, nullptr)),
+		  continuation_(std::exchange(x.continuation_, nullptr))
 	{
 		if (future_)
 			future_->promise_ = this;
@@ -899,6 +903,7 @@ void future<void>::schedule(Func&& func)
 
 void future<void>::forward_to(promise<void>& pr)
 {
+	get();
 	pr.set_value();
 }
 

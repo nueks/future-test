@@ -2,7 +2,6 @@
 #include "gtest/gtest.h"
 
 
-
 TEST(ReadyFutureTest, get)
 {
 	auto fut = ex::make_ready_future<int>(13);
@@ -18,6 +17,22 @@ TEST(ReadyFutureTest, exception)
 	EXPECT_THROW(fut.get(), std::runtime_error);
 }
 
+TEST(ReadyFutureTest, exception_void)
+{
+	auto fut = ex::make_ready_future<void>(std::runtime_error("err"));
+
+	fut.then(
+		[](ex::future<void> fut) {
+			EXPECT_THROW(fut.get(), std::runtime_error);
+			throw std::runtime_error("err");
+		}
+	).then(
+		[](ex::future<void> fut) {
+			EXPECT_THROW(fut.get(), std::runtime_error);
+		}
+	);
+}
+
 TEST(ReadyFutureTest, void_get)
 {
 	auto fut = ex::make_ready_future<void>();
@@ -26,9 +41,44 @@ TEST(ReadyFutureTest, void_get)
 
 TEST(ReadyFutureTest, then)
 {
+	auto counter = int{0};
+	auto fut = ex::make_ready_future<bool>(true);
+	fut.then(
+		[&counter](ex::future<bool> fut) {
+			counter++; // 1
+			if (fut.get())
+				return 13;
+			else
+				return 42;
+		}
+	).then(
+		[&counter](ex::future<int> fut) {
+			counter++; // 2
+			EXPECT_EQ(fut.get(), 13);
+		}
+	).then(
+		[&counter](ex::future<void> fut) {
+			counter++; // 3
+		}
+	).then(
+		[&counter](ex::future<void> fut) {
+			counter++; // 4
+			return 42;
+		}
+	).then(
+		[&counter](ex::future<int> fut) {
+			counter++; // 5
+			EXPECT_EQ(fut.get(), 42);
+			throw std::runtime_error("error");
+		}
+	).then(
+		[&counter](ex::future<void> fut) {
+			counter++; // 6
+			EXPECT_THROW(fut.get(), std::runtime_error);
+		}
+	);
+	EXPECT_EQ(counter, 6);
 }
-
-
 
 
 struct FutureTest : public ::testing::Test
@@ -159,6 +209,125 @@ TEST_F(FutureTest, get)
 	EXPECT_EQ(fut.get(), 13);
 }
 
+TEST_F(FutureTest, exception)
+{
+	auto pr = ex::promise<int>();
+	auto fut = pr.get_future();
+	auto run = async(
+		[pr = std::move(pr)]() mutable {
+			usleep(1000);
+			pr.set_exception(std::runtime_error("error"));
+		}
+	);
+
+	using namespace std::literals::chrono_literals;
+	auto status = fut.wait_for(100us);
+	EXPECT_EQ(status, ex::future_status::timeout);
+
+	run.get();
+	EXPECT_THROW(fut.get(), std::runtime_error);
+}
+
+// TEST_F(FutureTest, set_and_then)
+// {
+// 	auto counter = int{0};
+// 	auto pr = ex::promise<bool>();
+// 	auto fut = pr.get_future();
+// 	execute(
+// 		[pr = std::move(pr)]() mutable {
+// 			usleep(1000);
+// 			pr.set_value(true);
+// 		}
+// 	);
+// 	fut.then(
+// 		[&counter](ex::future<bool> fut) {
+// 			counter++; // 1
+// 			if (fut.get())
+// 				return 13;
+// 			else
+// 				return 42;
+// 		}
+// 	).then(
+// 		[&counter](ex::future<int> fut) {
+// 			counter++; // 2
+// 			EXPECT_EQ(fut.get(), 13);
+// 		}
+// 	).then(
+// 		[&counter](ex::future<void> fut) {
+// 			counter++; // 3
+// 		}
+// 	).then(
+// 		[&counter](ex::future<void> fut) {
+// 			counter++; // 4
+// 			return 42;
+// 		}
+// 	).then(
+// 		[&counter](ex::future<int> fut) {
+// 			counter++; // 5
+// 			EXPECT_EQ(fut.get(), 42);
+// 			throw std::runtime_error("error");
+// 		}
+// 	).then(
+// 		[&counter](ex::future<void> fut) {
+// 			counter++; // 6
+// 			EXPECT_THROW(fut.get(), std::runtime_error);
+// 		}
+// 	);
+// 	EXPECT_EQ(counter, 6);
+// }
+
+TEST_F(FutureTest, then_and_set)
+{
+	auto counter = int{0};
+	auto pr = ex::promise<int>();
+	auto fut = pr.get_future();
+	auto f = fut.then(
+		[&counter](ex::future<int> fut) mutable {
+			counter++;
+			throw std::runtime_error("error");
+			return 10;
+		}
+	).then(
+		[&counter](ex::future<int> fut) {
+			counter++;
+			EXPECT_EQ(fut.get(), 13);
+		}
+	).then(
+		[&counter](ex::future<void> fut) {
+			counter++;
+		}
+	).then(
+		[&counter](ex::future<void> fut) {
+			counter++;
+			return 42;
+		}
+	).then(
+		[&counter](ex::future<int> fut) {
+			counter++;
+			EXPECT_EQ(fut.get(), 42);
+			throw std::runtime_error("error");
+			return;
+
+		}
+	).then(
+		[&counter](ex::future<void> fut) {
+			counter++;
+			EXPECT_THROW(fut.get(), std::runtime_error);
+			return 13;
+		}
+	);
+	auto run = execute(
+		[pr = std::move(pr)]() mutable {
+			usleep(1000);
+			pr.set_value(13);
+			return true;
+		}
+	);
+	EXPECT_EQ(run, true);
+
+	EXPECT_EQ(f.get(), 13);
+	EXPECT_EQ(counter, 6);
+}
 
 
 
