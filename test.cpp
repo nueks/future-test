@@ -12,19 +12,20 @@ TEST(ReadyFutureTest, get)
 
 TEST(ReadyFutureTest, exception)
 {
-	auto fut = ex::make_ready_future<int>(std::runtime_error("err"));
+	auto fut = ex::make_exception_future<int>(std::runtime_error("err"));
 	EXPECT_THROW(fut.get(), std::runtime_error);
 	EXPECT_THROW(fut.get(), std::runtime_error);
 }
 
 TEST(ReadyFutureTest, exception_void)
 {
-	auto fut = ex::make_ready_future<void>(std::runtime_error("err"));
+	auto fut = ex::make_exception_future<>(std::runtime_error("err"));
 
 	fut.then(
-		[](ex::future<void> fut) {
+		[](ex::future<> fut) {
 			EXPECT_THROW(fut.get(), std::runtime_error);
 			throw std::runtime_error("err");
+			//return "test";
 		}
 	).then(
 		[](ex::future<void> fut) {
@@ -35,7 +36,7 @@ TEST(ReadyFutureTest, exception_void)
 
 TEST(ReadyFutureTest, void_get)
 {
-	auto fut = ex::make_ready_future<void>();
+	auto fut = ex::make_ready_future<>();
 	fut.get();
 }
 
@@ -57,11 +58,11 @@ TEST(ReadyFutureTest, then)
 			EXPECT_EQ(fut.get(), 13);
 		}
 	).then(
-		[&counter](ex::future<void> fut) {
+		[&counter](ex::future<> fut) {
 			counter++; // 3
 		}
 	).then(
-		[&counter](ex::future<void> fut) {
+		[&counter](ex::future<> fut) {
 			counter++; // 4
 			return 42;
 		}
@@ -72,7 +73,7 @@ TEST(ReadyFutureTest, then)
 			throw std::runtime_error("error");
 		}
 	).then(
-		[&counter](ex::future<void> fut) {
+		[&counter](ex::future<> fut) {
 			counter++; // 6
 			EXPECT_THROW(fut.get(), std::runtime_error);
 		}
@@ -293,11 +294,11 @@ TEST_F(FutureTest, then_and_set)
 			EXPECT_EQ(fut.get(), 13);
 		}
 	).then(
-		[&counter](ex::future<void> fut) {
+		[&counter](ex::future<> fut) {
 			counter++;
 		}
 	).then(
-		[&counter](ex::future<void> fut) {
+		[&counter](ex::future<> fut) {
 			counter++;
 			return 42;
 		}
@@ -310,7 +311,7 @@ TEST_F(FutureTest, then_and_set)
 
 		}
 	).then(
-		[&counter](ex::future<void> fut) {
+		[&counter](ex::future<> fut) {
 			counter++;
 			EXPECT_THROW(fut.get(), std::runtime_error);
 			return 13;
@@ -334,6 +335,8 @@ TEST_F(FutureTest, then_and_set)
 
 int main(int argc, char* argv[])
 {
+	ex::promise<void> a;
+	a.set_value();
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
 }
