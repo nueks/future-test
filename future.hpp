@@ -451,6 +451,22 @@ public:
 		state_ = state::future_ready;
 	}
 
+	bool ready() const
+	{
+		switch (state_)
+		{
+			case state::invalid:
+			case state::future:
+				return false;
+			case state::future_ready:
+			case state::result:
+			case state::exception:
+				return true;
+			default:
+				abort();
+		}
+	}
+
 	template <typename Rep, typename Period>
 	future_status wait_for(const std::chrono::duration<Rep, Period>& timeout_duration) const
 	{
