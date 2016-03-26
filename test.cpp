@@ -1,12 +1,30 @@
 #include "future.hpp"
 #include "gtest/gtest.h"
+#include <typeinfo>
+#include <cxxabi.h>
 
+
+
+std::string name(const std::type_info& info)
+{
+	return abi::__cxa_demangle(info.name(), NULL, NULL, NULL);
+}
 
 TEST(ReadyFutureTest, get)
 {
-	auto fut = ex::make_ready_future<int>(13);
+	auto fut = ex::make_ready_future(13);
 	EXPECT_EQ(fut.get(), 13);
 	EXPECT_EQ(fut.get(), 13);
+
+	auto f = ex::future<const char*>(ex::ready_future_marker(), "test");
+	auto f1 = ex::make_ready_future("test");
+	f1.then(
+		[](ex::future<std::string> f)
+		{
+			std::cout << name(typeid(f)) << std::endl;
+			std::cout << f.get() << std::endl;
+		}
+	);
 
 }
 
@@ -25,10 +43,10 @@ TEST(ReadyFutureTest, exception_void)
 		[](ex::future<> fut) {
 			EXPECT_THROW(fut.get(), std::runtime_error);
 			throw std::runtime_error("err");
-			//return "test";
-		}
+			return "test";
+			}
 	).then(
-		[](ex::future<void> fut) {
+		[](auto fut) {
 			EXPECT_THROW(fut.get(), std::runtime_error);
 		}
 	);

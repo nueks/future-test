@@ -314,11 +314,6 @@ class promise<void> : public promise<> {};
 
 
 
-// template <typename... T> void set_promise(future<T...>&& f, promise<T...>& p);
-
-//void set_promise(future<>&& f, promise<>& p);
-
-
 template <typename... T>
 class future
 {
@@ -340,7 +335,8 @@ private:
 		exception,
 	} state_{state::future};
 
-	std::tuple<T...> value_;
+	//std::tuple<T...> value_;
+	std::tuple<std::decay_t<T>... > value_;
 	std::exception_ptr ex_{nullptr};
 
 public:
@@ -358,11 +354,6 @@ public:
 			promise_->future_ = this;
 		}
 	}
-
-	// template <typename... U>
-	// future(future<U...>&& x) noexcept
-	// 	: impl_(std::move(x.impl_)),
-
 
 	future(promise<T...>* pr)
 		: impl_(pr->impl_.get_future()),
@@ -565,15 +556,14 @@ private:
 };
 
 template <>
-class future<void> : public future<>
+struct future<void> : public future<>
 {
-public:
-	using future<>::future;
+	//using future<>::future;
 	future(future<>&& x) : future<>(std::move(x)) {}
 };
 
-
-
+// template <>
+// struct future<const char*> : public future<std::string> {}
 
 
 
@@ -581,6 +571,12 @@ template <typename... T>
 inline future<T...> make_ready_future(T&&... value) noexcept
 {
 	return future<T...>(ready_future_marker(), std::forward<T>(value)...);
+}
+
+template <std::size_t N>
+inline future<std::string> make_ready_future(const char(&ar)[N]) noexcept
+{
+	return future<std::string>(ready_future_marker(), ar);
 }
 
 template <typename... T>
