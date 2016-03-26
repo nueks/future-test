@@ -78,18 +78,18 @@ public:
 template <typename Func, typename T>
 struct continuation : public task
 {
-	continuation(Func&& func, T* arg)
+	continuation(Func&& func, T&& arg)
 		: func_(std::move(func)),
-		  arg_(arg)
+		  arg_(std::move(arg))
 	{}
 
 	virtual void run() noexcept override
 	{
-		func_(arg_);
+		func_(std::move(arg_));
 	}
 
 	Func func_;
-	T* arg_;
+	T arg_;
 };
 
 
@@ -114,21 +114,21 @@ R get_value_impl(std::tuple<T...>&& x)
 {
 	return std::get<0>(std::move(x));
 };
-template <typename... T, typename R = typename future_result_type<T...>::type>
-R get_value_impl(const std::tuple<T...>& x)
-{
-	return std::get<0>(x);
-};
+// template <typename... T, typename R = typename future_result_type<T...>::type>
+// R get_value_impl(const std::tuple<T...>& x)
+// {
+// 	return std::get<0>(x);
+// };
 template <>
 void get_value_impl(std::tuple<>&& x)
 {
 	return;
 };
-template <>
-void get_value_impl(const std::tuple<>& x)
-{
-	return;
-};
+// template <>
+// void get_value_impl(const std::tuple<>& x)
+// {
+// 	return;
+// };
 
 
 // template <typename... T>
@@ -345,7 +345,7 @@ public:
 	future(future&& x) noexcept
 		: impl_(std::move(x.impl_)),
 		  promise_(std::exchange(x.promise_, nullptr)),
-		  state_(std::move(x.state_)),
+		  state_(std::exchange(x.state_, state::invalid)),
 		  value_(std::move(x.value_)),
 		  ex_(std::move(x.ex_))
 	{
@@ -409,9 +409,8 @@ public:
 			case state::future:
 				return impl_.get();
 			case state::result:
-				return get_value();
 			case state::exception:
-				std::rethrow_exception(ex_);
+				return get_value();
 			default:
 				abort();
 		}
@@ -453,9 +452,7 @@ public:
 		return future_status::ready;
 	}
 
-
-	template <
-			  typename Func,
+	template <typename Func,
 			  typename Result = futurize_t<std::result_of_t<Func(future)> > >
 	Result then(Func&& func) noexcept
 	{
@@ -478,10 +475,10 @@ public:
 			auto fut = pr.get_future();
 
 			schedule(
-				[pr = std::move(pr), func = std::forward<Func>(func)](future* f) mutable {
+				[pr = std::move(pr), func = std::forward<Func>(func)](future f) mutable {
 					try
 					{
-						futurator::apply(func, std::move(*f)).forward_to(pr);
+						futurator::apply(func, std::move(f)).forward_to(pr);
 					}
 					catch (...)
 					{
@@ -496,8 +493,9 @@ public:
 	template <typename Func>
 	void schedule(Func&& func)
 	{
-		promise_->continuation_ = std::make_unique<continuation<Func, future<T...> > >(
-			std::forward<Func>(func), this
+		auto tmp = promise_;
+		tmp->continuation_ = std::make_unique<continuation<Func, future<T...> > >(
+			std::forward<Func>(func), std::move(*this)
 		);
 	}
 
@@ -532,7 +530,7 @@ private:
 		state_ = state::exception;
 	}
 
-	result_type get_value() &&
+	result_type get_value()// &&
 	{
 		assert(state_ != state::future);
 		if (state_ == state::exception)
@@ -540,18 +538,20 @@ private:
 			state_ = state::invalid;
 			std::rethrow_exception(std::move(ex_));
 		}
+
+		state_ = state::invalid;
 		return get_value_impl<T...>(std::move(value_));
 	}
 
-	result_type get_value() const&
-	{
-		assert(state_ != state::future);
-		if (state_ == state::exception)
-		{
-			std::rethrow_exception(ex_);
-		}
-		return get_value_impl<T...>(value_);
-	}
+	// result_type get_value() const&
+	// {
+	// 	assert(state_ != state::future);
+	// 	if (state_ == state::exception)
+	// 	{
+	// 		std::rethrow_exception(ex_);
+	// 	}
+	// 	return get_value_impl<T...>(value_);
+	// }
 
 };
 

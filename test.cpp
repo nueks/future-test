@@ -14,7 +14,7 @@ TEST(ReadyFutureTest, get)
 {
 	auto fut = ex::make_ready_future(13);
 	EXPECT_EQ(fut.get(), 13);
-	EXPECT_EQ(fut.get(), 13);
+	//EXPECT_EQ(fut.get(), 13);
 
 	auto f = ex::future<const char*>(ex::ready_future_marker(), "test");
 	auto f1 = ex::make_ready_future("test");
@@ -26,13 +26,15 @@ TEST(ReadyFutureTest, get)
 		}
 	);
 
+	//std::cout << f1.get() << std::endl;
+
 }
 
 TEST(ReadyFutureTest, exception)
 {
 	auto fut = ex::make_exception_future<int>(std::runtime_error("err"));
 	EXPECT_THROW(fut.get(), std::runtime_error);
-	EXPECT_THROW(fut.get(), std::runtime_error);
+	//EXPECT_THROW(fut.get(), std::runtime_error);
 }
 
 TEST(ReadyFutureTest, exception_void)
