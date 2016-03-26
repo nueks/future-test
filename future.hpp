@@ -281,13 +281,13 @@ public:
 	void set_value(A&&... a) noexcept
 	{
 		impl_.set_value(std::forward<A>(a)...);
-		run_continuation();
+		notify();
 	}
 
 	void set_exception(std::exception_ptr ex) noexcept
 	{
 		impl_.set_exception(ex);
-		run_continuation();
+		notify();
 	}
 
 	template <typename Exception>
@@ -296,15 +296,22 @@ public:
 		impl_.set_exception(
 			std::make_exception_ptr(std::forward<Exception>(ex))
 		);
-		run_continuation();
+		notify();
 	}
 
 private:
-	void run_continuation()
+	void notify()
 	{
+		if (future_)
+		{
+			future_->set_ready();
+			future_->promise_ = nullptr;
+			future_ = nullptr;
+		}
 		if (continuation_)
 		{
 			continuation_->run();
+			continuation_ = nullptr;
 		}
 	}
 };
@@ -331,11 +338,11 @@ private:
 	{
 		invalid,
 		future,
+		future_ready,
 		result,
 		exception,
 	} state_{state::future};
 
-	//std::tuple<T...> value_;
 	std::tuple<std::decay_t<T>... > value_;
 	std::exception_ptr ex_{nullptr};
 
@@ -407,6 +414,7 @@ public:
 		switch (state_)
 		{
 			case state::future:
+			case state::future_ready:
 				return impl_.get();
 			case state::result:
 			case state::exception:
@@ -421,6 +429,7 @@ public:
 		switch (state_)
 		{
 			case state::future:
+			case state::future_ready:
 				return impl_.valid();
 			case state::result:
 			case state::exception:
@@ -436,10 +445,16 @@ public:
 			impl_.wait();
 	}
 
+	void set_ready() noexcept
+	{
+		assert(state_ == state::future);
+		state_ = state::future_ready;
+	}
+
 	template <typename Rep, typename Period>
 	future_status wait_for(const std::chrono::duration<Rep, Period>& timeout_duration) const
 	{
-		if (state_ == state::future)
+		if (state_ == state::future || state_ == state::future_ready)
 			return static_cast<future_status>(impl_.wait_for(timeout_duration));
 		return future_status::ready;
 	}
@@ -447,7 +462,7 @@ public:
 	template <typename Clock, typename Duration>
 	future_status wait_until(const std::chrono::time_point<Clock, Duration>& timeout_time) const
 	{
-		if (state_ == state::future)
+		if (state_ == state::future || state_ == state::future_ready)
 			return static_cast<future_status>(impl_.wait_until(timeout_time));
 		return future_status::ready;
 	}
@@ -457,7 +472,7 @@ public:
 	Result then(Func&& func) noexcept
 	{
 		using futurator = futurize<std::result_of_t<Func(future)> >;
-		if (state_ == state::result || state_ == state::exception)
+		if (state_ == state::result || state_ == state::exception || state_ == state::future_ready)
 		{
 			try
 			{
@@ -488,15 +503,6 @@ public:
 			);
 			return fut;
 		}
-	}
-
-	template <typename Func>
-	void schedule(Func&& func)
-	{
-		auto tmp = promise_;
-		tmp->continuation_ = std::make_unique<continuation<Func, future<T...> > >(
-			std::forward<Func>(func), std::move(*this)
-		);
 	}
 
 	template <typename U = result_type>
@@ -552,6 +558,17 @@ private:
 	// 	}
 	// 	return get_value_impl<T...>(value_);
 	// }
+
+	template <typename Func>
+	void schedule(Func&& func)
+	{
+		auto tmp = promise_;
+		tmp->continuation_ = std::make_unique<continuation<Func, future<T...> > >(
+			std::forward<Func>(func), std::move(*this)
+		);
+		tmp->future_ = nullptr;
+	}
+
 
 };
 
@@ -648,7 +665,6 @@ struct futurize
 		}
 	}
 
-
 	static inline type convert(T&&... value)
 	{
 		return make_ready_future<T...>(std::move(value)...);
@@ -658,7 +674,6 @@ struct futurize
 	{
 		return std::move(value);
 	}
-
 };
 
 template <>
