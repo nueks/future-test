@@ -8,12 +8,12 @@
 #include <chrono>
 #include <cassert>
 #include <memory>
+#include <atomic>
 
 #pragma once
 
-namespace ex
+namespace dot
 {
-
 
 template <typename... T>
 class future;
@@ -34,15 +34,23 @@ enum class future_status
 template <typename... T>
 struct futurize;
 
-template <typename... T>
-using futurize_t = typename futurize<T...>::type;
+class spinlock
+{
+private:
+	std::atomic_flag lock_{ATOMIC_FLAG_INIT};
+
+public:
+	spinlock() = default;
+	~spinlock() = default;
+	void lock()	{ while (lock_.test_and_set(std::memory_order_acquire)); }
+	void unlock() { lock_.clear(std::memory_order_release);	}
+};
 
 
 
 class task
 {
 public:
-	//virtual ~task() noexcept {}
 	virtual void run() noexcept = 0;
 };
 
@@ -65,42 +73,9 @@ struct continuation : public task
 
 
 template <typename... T>
-struct promise_impl_type { using type = std::promise<T...>; };
+struct promise_impl { using type = std::promise<T...>; };
 template <>
-struct promise_impl_type<> { using type = std::promise<void>; };
-
-template <typename... T>
-struct future_impl_type { using type = std::future<T...>; };
-template <>
-struct future_impl_type<> { using type = std::future<void>; };
-
-template <typename... T>
-struct future_result_type { using type = std::tuple_element_t<0, std::tuple<T...> >; };
-template <>
-struct future_result_type<> { using type = void; };
-
-
-template <typename... T, typename R = typename future_result_type<T...>::type>
-R get_value_impl(std::tuple<T...>&& x)
-{
-	return std::get<0>(std::move(x));
-};
-// template <typename... T, typename R = typename future_result_type<T...>::type>
-// R get_value_impl(const std::tuple<T...>& x)
-// {
-// 	return std::get<0>(x);
-// };
-template <>
-void get_value_impl(std::tuple<>&& x)
-{
-	return;
-};
-// template <>
-// void get_value_impl(const std::tuple<>& x)
-// {
-// 	return;
-// };
-
+struct promise_impl<> { using type = std::promise<void>; };
 
 template <typename... T>
 class promise
@@ -109,11 +84,12 @@ class promise
 	friend class future;
 
 private:
-	using impl_type = typename promise_impl_type<T...>::type;
+	using impl_type = typename promise_impl<T...>::type;
 	impl_type impl_;
 
 	future<T...>* future_{nullptr};
 	std::unique_ptr<task> continuation_{nullptr};
+	spinlock lock_;
 
 public:
 	promise() noexcept {}
@@ -147,26 +123,26 @@ public:
 		return *this;
 	}
 
-	future<T...> get_future() noexcept
+	future<T...> get_future()
 	{
 		return future<T...>(this);
 	}
 
 	template <typename... A>
-	void set_value(A&&... a) noexcept
+	void set_value(A&&... a)
 	{
 		impl_.set_value(std::forward<A>(a)...);
 		notify();
 	}
 
-	void set_exception(std::exception_ptr ex) noexcept
+	void set_exception(std::exception_ptr ex)
 	{
 		impl_.set_exception(ex);
 		notify();
 	}
 
 	template <typename Exception>
-	void set_exception(Exception&& ex) noexcept
+	void set_exception(Exception&& ex)
 	{
 		impl_.set_exception(
 			std::make_exception_ptr(std::forward<Exception>(ex))
@@ -177,14 +153,15 @@ public:
 private:
 	void notify()
 	{
+		std::unique_lock<spinlock> lock(lock_);
 		if (future_)
 		{
 			future_->set_ready();
-			future_->promise_ = nullptr;
 			future_ = nullptr;
 		}
-		if (continuation_)
+		else if (continuation_)
 		{
+			lock.unlock();
 			continuation_->run();
 			continuation_ = nullptr;
 		}
@@ -192,9 +169,24 @@ private:
 };
 
 template <>
-class promise<void> : public promise<> {};
+struct promise<void> : public promise<> {};
 
 
+
+template <typename... T>
+struct future_impl { using type = std::future<T...>; };
+template <>
+struct future_impl<> { using type = std::future<void>; };
+
+template <typename... T>
+struct future_result { using type = std::tuple_element_t<0, std::tuple<std::decay_t<T>...> >; };
+template <>
+struct future_result<> { using type = void; };
+
+template <typename... T, typename R = typename future_result<T...>::type>
+R get_value_impl(std::tuple<T...>&& x) { return std::get<0>(std::move(x)); };
+template <>
+void get_value_impl(std::tuple<>&& x) {	return; };
 
 template <typename... T>
 class future
@@ -203,8 +195,8 @@ class future
 	friend class promise;
 
 private:
-	using impl_type = typename future_impl_type<T...>::type;
-	using result_type = typename future_result_type<T...>::type;
+	using impl_type = typename future_impl<T...>::type;
+	using result_type = typename future_result<T...>::type;
 
 	impl_type impl_;
 	promise<T...>* promise_{nullptr};
@@ -288,6 +280,11 @@ public:
 	{
 		switch (state_)
 		{
+			case state::invalid:
+			{
+				std::error_code ec(std::make_error_code(std::future_errc::no_state));
+				throw std::future_error(ec);
+			}
 			case state::future:
 			case state::future_ready:
 				return impl_.get();
@@ -324,6 +321,7 @@ public:
 	{
 		assert(state_ == state::future);
 		state_ = state::future_ready;
+		//promise_ = nullptr;
 	}
 
 	bool ready() const
@@ -359,40 +357,54 @@ public:
 	}
 
 	template <typename Func,
-			  typename Result = futurize_t<std::result_of_t<Func(future)> > >
+			  typename Futurize = futurize<std::result_of_t<Func(future)> >,
+			  typename Result = typename Futurize::type>
 	Result then(Func&& func) noexcept
 	{
-		using futurator = futurize<std::result_of_t<Func(future)> >;
-		if (state_ == state::result || state_ == state::exception || state_ == state::future_ready)
+		std::unique_lock<spinlock> lock;
+		if (promise_)
 		{
-			try
-			{
-				return futurator::apply(std::forward<Func>(func), std::move(*this));
-			}
-			catch (...)
-			{
-				return Result(exception_future_marker(), std::current_exception());
-			}
+			lock = std::unique_lock<spinlock>(promise_->lock_);
 		}
 
-		if (state_ == state::future)
+		switch (state_)
 		{
-			typename futurator::promise_type pr;
-			auto fut = pr.get_future();
-
-			schedule(
-				[pr = std::move(pr), func = std::forward<Func>(func)](future f) mutable {
-					try
-					{
-						futurator::apply(func, std::move(f)).forward_to(pr);
-					}
-					catch (...)
-					{
-						pr.set_exception(std::current_exception());
-					}
+			case state::result:
+			case state::exception:
+			case state::future_ready:
+			{
+				if (promise_) lock.unlock();
+				promise_ = nullptr;
+				try
+				{
+					return Futurize::apply(std::forward<Func>(func), std::move(*this));
 				}
-			);
-			return fut;
+				catch (...)
+				{
+					return Result(exception_future_marker(), std::current_exception());
+				}
+			}
+			case state::future:
+			{
+				typename Futurize::promise_type pr;
+				auto fut = pr.get_future();
+
+				schedule(
+					[pr = std::move(pr), func = std::forward<Func>(func)](future f) mutable {
+						try
+						{
+							Futurize::apply(func, std::move(f)).forward_to(pr);
+						}
+						catch (...)
+						{
+							pr.set_exception(std::current_exception());
+						}
+					}
+				);
+				return fut;
+			}
+			default:
+				abort();
 		}
 	}
 
@@ -412,6 +424,17 @@ public:
 	}
 
 private:
+	template <typename Func>
+	void schedule(Func&& func)
+	{
+		auto tmp = promise_;
+		promise_ = nullptr;
+		tmp->continuation_ = std::make_unique<continuation<Func, future> >(
+			std::forward<Func>(func), std::move(*this)
+		);
+		tmp->future_ = nullptr;
+	}
+
 	template <typename... A>
 	void set(A&&... a)
 	{
@@ -427,9 +450,10 @@ private:
 		state_ = state::exception;
 	}
 
-	result_type get_value()// &&
+	result_type get_value()
 	{
 		assert(state_ != state::future);
+		promise_ = nullptr;
 		if (state_ == state::exception)
 		{
 			state_ = state::invalid;
@@ -439,39 +463,14 @@ private:
 		state_ = state::invalid;
 		return get_value_impl<T...>(std::move(value_));
 	}
-
-	// result_type get_value() const&
-	// {
-	// 	assert(state_ != state::future);
-	// 	if (state_ == state::exception)
-	// 	{
-	// 		std::rethrow_exception(ex_);
-	// 	}
-	// 	return get_value_impl<T...>(value_);
-	// }
-
-	template <typename Func>
-	void schedule(Func&& func)
-	{
-		auto tmp = promise_;
-		tmp->continuation_ = std::make_unique<continuation<Func, future<T...> > >(
-			std::forward<Func>(func), std::move(*this)
-		);
-		tmp->future_ = nullptr;
-	}
-
-
 };
 
 template <>
 struct future<void> : public future<>
 {
-	//using future<>::future;
+	using future<>::future;
 	future(future<>&& x) : future<>(std::move(x)) {}
 };
-
-// template <>
-// struct future<const char*> : public future<std::string> {}
 
 
 
@@ -500,26 +499,21 @@ inline future<T...> make_exception_future(Exception&& ex) noexcept
 }
 
 
-
 template <typename... T>
-struct futurize_helper
-{
-	using type = future<T...>;
-	using promise_type = promise<T...>;
-};
-
+struct futurize_future { using type = future<T...>; };
 template <typename... T>
-struct futurize_helper<future<T...> >
-{
-	using type = future<T...>;
-	using promise_type = promise<T...>;
-};
+struct futurize_future<future<T...> > { using type = future<T...>; };
+template <typename... T>
+struct futurize_promise { using type = promise<T...>; };
+template <typename... T>
+struct futurize_promise<future<T...> > { using type = promise<T...>; };
 
 template <typename... T>
 struct futurize
 {
-	using type = typename futurize_helper<T...>::type;
-	using promise_type = typename futurize_helper<T...>::promise_type;
+	using type = typename futurize_future<T...>::type;
+	using promise_type = typename futurize_promise<T...>::type;
+
 
 	template <typename Func, typename Arg>
 	static inline std::enable_if_t<!std::is_same<std::result_of_t<Func(Arg)>, void>::value, type>
@@ -564,4 +558,4 @@ struct futurize
 template <>
 class futurize<void> : public futurize<> {};
 
-} // namespace ex
+} // namespace dot

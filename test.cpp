@@ -12,39 +12,24 @@ std::string name(const std::type_info& info)
 
 TEST(ReadyFutureTest, get)
 {
-	auto ff = ex::future<int>();
-
-	auto fut = ex::make_ready_future(13);
+	auto fut = dot::make_ready_future(13);
 	EXPECT_EQ(fut.get(), 13);
-	//EXPECT_EQ(fut.get(), 13);
-
-	auto f = ex::future<const char*>(ex::ready_future_marker(), "test");
-	auto f1 = ex::make_ready_future("test");
-	f1.then(
-		[](ex::future<std::string> f)
-		{
-			std::cout << name(typeid(f)) << std::endl;
-			std::cout << f.get() << std::endl;
-		}
-	);
-
-	//std::cout << f1.get() << std::endl;
-
+	EXPECT_THROW(fut.get(), std::future_error);
 }
 
 TEST(ReadyFutureTest, exception)
 {
-	auto fut = ex::make_exception_future<int>(std::runtime_error("err"));
+	auto fut = dot::make_exception_future<int>(std::runtime_error("err"));
 	EXPECT_THROW(fut.get(), std::runtime_error);
-	//EXPECT_THROW(fut.get(), std::runtime_error);
+	EXPECT_THROW(fut.get(), std::future_error);
 }
 
 TEST(ReadyFutureTest, exception_void)
 {
-	auto fut = ex::make_exception_future<>(std::runtime_error("err"));
+	auto fut = dot::make_exception_future<>(std::runtime_error("err"));
 
 	fut.then(
-		[](ex::future<> fut) {
+		[](dot::future<> fut) {
 			EXPECT_THROW(fut.get(), std::runtime_error);
 			throw std::runtime_error("err");
 			return "test";
@@ -58,16 +43,18 @@ TEST(ReadyFutureTest, exception_void)
 
 TEST(ReadyFutureTest, void_get)
 {
-	auto fut = ex::make_ready_future<>();
+	auto fut = dot::make_ready_future<>();
 	fut.get();
+	EXPECT_THROW(fut.get(), std::future_error);
+	EXPECT_THROW(fut.get(), std::future_error);
 }
 
 TEST(ReadyFutureTest, then)
 {
 	auto counter = int{0};
-	auto fut = ex::make_ready_future<bool>(true);
+	auto fut = dot::make_ready_future<bool>(true);
 	fut.then(
-		[&counter](ex::future<bool> fut) {
+		[&counter](dot::future<bool> fut) {
 			counter++; // 1
 			if (fut.get())
 				return 13;
@@ -75,27 +62,27 @@ TEST(ReadyFutureTest, then)
 				return 42;
 		}
 	).then(
-		[&counter](ex::future<int> fut) {
+		[&counter](dot::future<int> fut) {
 			counter++; // 2
 			EXPECT_EQ(fut.get(), 13);
 		}
 	).then(
-		[&counter](ex::future<> fut) {
+		[&counter](dot::future<> fut) {
 			counter++; // 3
 		}
 	).then(
-		[&counter](ex::future<> fut) {
+		[&counter](dot::future<> fut) {
 			counter++; // 4
 			return 42;
 		}
 	).then(
-		[&counter](ex::future<int> fut) {
+		[&counter](dot::future<int> fut) {
 			counter++; // 5
 			EXPECT_EQ(fut.get(), 42);
 			throw std::runtime_error("error");
 		}
 	).then(
-		[&counter](ex::future<> fut) {
+		[&counter](dot::future<> fut) {
 			counter++; // 6
 			EXPECT_THROW(fut.get(), std::runtime_error);
 		}
@@ -215,7 +202,7 @@ TEST_F(FutureTest, fixture_self)
 
 TEST_F(FutureTest, get)
 {
-	auto pr = ex::promise<int>();
+	auto pr = dot::promise<int>();
 	auto fut = pr.get_future();
 	auto run = async(
 		[pr = std::move(pr)]() mutable {
@@ -226,7 +213,7 @@ TEST_F(FutureTest, get)
 
 	using namespace std::literals::chrono_literals;
 	auto status = fut.wait_for(100us);
-	EXPECT_EQ(status, ex::future_status::timeout);
+	EXPECT_EQ(status, dot::future_status::timeout);
 
 	run.get();
 	EXPECT_EQ(fut.get(), 13);
@@ -234,7 +221,7 @@ TEST_F(FutureTest, get)
 
 TEST_F(FutureTest, exception)
 {
-	auto pr = ex::promise<int>();
+	auto pr = dot::promise<int>();
 	auto fut = pr.get_future();
 	auto run = async(
 		[pr = std::move(pr)]() mutable {
@@ -245,7 +232,7 @@ TEST_F(FutureTest, exception)
 
 	using namespace std::literals::chrono_literals;
 	auto status = fut.wait_for(100us);
-	EXPECT_EQ(status, ex::future_status::timeout);
+	EXPECT_EQ(status, dot::future_status::timeout);
 
 	run.get();
 	EXPECT_THROW(fut.get(), std::runtime_error);
@@ -254,7 +241,7 @@ TEST_F(FutureTest, exception)
 TEST_F(FutureTest, set_and_then)
 {
 	auto counter = int{0};
-	auto pr = ex::promise<bool>();
+	auto pr = dot::promise<bool>();
 	auto fut = pr.get_future();
 	execute(
 		[pr = std::move(pr)]() mutable {
@@ -263,7 +250,7 @@ TEST_F(FutureTest, set_and_then)
 		}
 	);
 	fut.then(
-		[&counter](ex::future<bool> fut) {
+		[&counter](dot::future<bool> fut) {
 			counter++; // 1
 			if (fut.get())
 				return 13;
@@ -271,21 +258,21 @@ TEST_F(FutureTest, set_and_then)
 				return 42;
 		}
 	).then(
-		[&counter](ex::future<int> fut) {
+		[&counter](dot::future<int> fut) {
 			counter++; // 2
 			EXPECT_EQ(fut.get(), 13);
 		}
 	).then(
-		[&counter](ex::future<void> fut) {
+		[&counter](dot::future<void> fut) {
 			counter++; // 3
 		}
 	).then(
-		[&counter](ex::future<> fut) {
+		[&counter](dot::future<> fut) {
 			counter++; // 4
 			return 42;
 		}
 	).then(
-		[&counter](ex::future<auto> fut) {
+		[&counter](dot::future<auto> fut) {
 			counter++; // 5
 			EXPECT_EQ(fut.get(), 42);
 			throw std::runtime_error("error");
@@ -302,30 +289,30 @@ TEST_F(FutureTest, set_and_then)
 TEST_F(FutureTest, then_and_set)
 {
 	auto counter = int{0};
-	auto pr = ex::promise<int>();
+	auto pr = dot::promise<int>();
 	auto fut = pr.get_future();
 	auto f = fut.then(
-		[&counter](ex::future<int> fut) mutable {
+		[&counter](dot::future<int> fut) mutable {
 			counter++;
 			throw std::runtime_error("error");
 			return 10;
 		}
 	).then(
-		[&counter](ex::future<int> fut) {
+		[&counter](dot::future<int> fut) {
 			counter++;
 			EXPECT_EQ(fut.get(), 13);
 		}
 	).then(
-		[&counter](ex::future<> fut) {
+		[&counter](dot::future<> fut) {
 			counter++;
 		}
 	).then(
-		[&counter](ex::future<> fut) {
+		[&counter](dot::future<> fut) {
 			counter++;
 			return 42;
 		}
 	).then(
-		[&counter](ex::future<int> fut) {
+		[&counter](dot::future<int> fut) {
 			counter++;
 			EXPECT_EQ(fut.get(), 42);
 			throw std::runtime_error("error");
@@ -333,7 +320,7 @@ TEST_F(FutureTest, then_and_set)
 
 		}
 	).then(
-		[&counter](ex::future<> fut) {
+		[&counter](dot::future<> fut) {
 			counter++;
 			EXPECT_THROW(fut.get(), std::runtime_error);
 			return 13;
@@ -352,13 +339,40 @@ TEST_F(FutureTest, then_and_set)
 	EXPECT_EQ(counter, 6);
 }
 
+TEST_F(FutureTest, set_get)
+{
+	dot::promise<int> pr;
+	pr.set_value(13);
+	auto fut = pr.get_future();
+	EXPECT_EQ(fut.get(), 13);
+}
 
+TEST_F(FutureTest, wait)
+{
+	auto pr = dot::promise<int>{};
+	auto fut = pr.get_future();
+	auto run = async(
+		[pr = std::move(pr)]() mutable {
+			usleep(1000000);
+			pr.set_exception(std::runtime_error("error"));
+		}
+	);
+	using namespace std::literals::chrono_literals;
+	{
+		dot::future_status st = fut.wait_for(500ms);
+		EXPECT_EQ(st, dot::future_status::timeout);
+	}
+	{
+		dot::future_status st = fut.wait_for(1s);
+		EXPECT_EQ(st, dot::future_status::ready);
+	}
+	run.get();
+	EXPECT_THROW(fut.get(), std::runtime_error);
+}
 
 
 int main(int argc, char* argv[])
 {
-	ex::promise<void> a;
-	a.set_value();
 	::testing::InitGoogleTest(&argc, argv);
 	return RUN_ALL_TESTS();
 }
@@ -367,7 +381,7 @@ int main(int argc, char* argv[])
 int main(int argc, char* argv[])
 {
 	{
-		auto pro = ex::promise<int>();
+		auto pro = dot::promise<int>();
 		auto fut = pro.get_future();
 
 		std::thread thd(
@@ -377,15 +391,15 @@ int main(int argc, char* argv[])
 			}
 		);
 
-		// auto fut = ex::make_ready_future<void>();
+		// auto fut = dot::make_ready_future<void>();
 
 		//std::cout << "fut: " << &fut << std::endl;
 		auto a = fut.then(
-			[](ex::future<int> n) {
+			[](dot::future<int> n) {
 				std::cout << "1st: " << n.get() << std::endl;
 			}
 		).then(
-			[](ex::future<void> n) {
+			[](dot::future<void> n) {
 				std::cout << "2nd: " << std::endl;
 				return std::string("test");
 			}
@@ -396,7 +410,7 @@ int main(int argc, char* argv[])
 
 
 	{
-		auto pro = ex::promise<int>();
+		auto pro = dot::promise<int>();
 		auto fut = pro.get_future();
 
 		std::thread thd(
@@ -407,7 +421,7 @@ int main(int argc, char* argv[])
 		);
 
 		fut.then(
-			[](ex::future<int> f){
+			[](dot::future<int> f){
 				try	{
 					std::cout << f.get() << std::endl;
 				}
@@ -423,8 +437,8 @@ int main(int argc, char* argv[])
 
 
 	{
-		ex::promise<int> pro;
-		ex::future<int> fut = pro.get_future();
+		dot::promise<int> pro;
+		dot::future<int> fut = pro.get_future();
 
 		std::thread thd(
 			[pro = std::move(pro)]() mutable {
@@ -433,14 +447,14 @@ int main(int argc, char* argv[])
 			}
 		);
 
-		ex::future_status status = fut.wait_for(std::chrono::seconds(5));
-		if (status == ex::future_status::deferred) {
+		dot::future_status status = fut.wait_for(std::chrono::seconds(5));
+		if (status == dot::future_status::deferred) {
 			std::cout << "deferred" << std::endl;
 		}
-		if (status == ex::future_status::timeout) {
+		if (status == dot::future_status::timeout) {
 			std::cout << "timeout" << std::endl;
 		}
-		if (status == ex::future_status::ready) {
+		if (status == dot::future_status::ready) {
 			std::cout << "ready" << std::endl;
 		}
 
@@ -456,30 +470,30 @@ int main(int argc, char* argv[])
 	}
 
 
-	auto fut0 = ex::make_ready_future<int>(1);
+	auto fut0 = dot::make_ready_future<int>(1);
 	fut0.then(
-		[](ex::future<int> n) {
+		[](dot::future<int> n) {
 			std::cout << "then1: " << n.get() << std::endl;
 		}
 	).then(
-		[](ex::future<void> f) {
+		[](dot::future<void> f) {
 			std::cout << "then2" << std::endl;
 			return 10;
 		}
 
 	).then(
-		[](ex::future<int> n) {
+		[](dot::future<int> n) {
 			std::cout << "then3: " << n.get() << std::endl;
-			return ex::make_ready_future<std::string>("test");
+			return dot::make_ready_future<std::string>("test");
 		}
 	).then(
-		[](ex::future<std::string> s) {
+		[](dot::future<std::string> s) {
 			std::cout << "then4: " << s.get() << std::endl;
 			throw std::runtime_error("error");
 			return std::string("test");
 		}
 	).then(
-		[](ex::future<std::string> fut) {
+		[](dot::future<std::string> fut) {
 			try
 			{
 				std::cout << fut.get() << std::endl;
@@ -490,32 +504,32 @@ int main(int argc, char* argv[])
 			}
 		}
 	).then(
-		[](ex::future<void> n){
+		[](dot::future<void> n){
 			std::cout << "then5: " << std::endl;
 		}
 	);
 
 
 
-	auto fut1 = ex::make_ready_future(3);
+	auto fut1 = dot::make_ready_future(3);
 	fut1.then(
-		[](ex::future<int> n){
+		[](dot::future<int> n){
 			std::cout << "int return: " << n.get() << std::endl;
-			return ex::make_ready_future<int>(10);
+			return dot::make_ready_future<int>(10);
 		}
 	).then(
-		[](ex::future<int> n){
+		[](dot::future<int> n){
 			std::cout << "void return2: " << n.get() << std::endl;
 			return 1;
 		}
 	);
 
-	auto fut2 = ex::make_ready_future<int>(4);
+	auto fut2 = dot::make_ready_future<int>(4);
 	auto i = fut2.then(
-		[](ex::future<int> n){
+		[](dot::future<int> n){
 			std::cout << "continuation: " << n.get() << std::endl;
-			//return ex::future<std::string>(ex::ready_future_marker(), "test");
-			return ex::make_ready_future<std::string>("test");
+			//return dot::future<std::string>(dot::ready_future_marker(), "test");
+			return dot::make_ready_future<std::string>("test");
 		}
 	).get();
 
@@ -523,10 +537,10 @@ int main(int argc, char* argv[])
 
 	// std::cout << fut2.get() << std::endl;
 
-	//ex::future<int> fut3(std::runtime_error("Example3"));
-	auto fut3 = ex::make_ready_future<int>(std::runtime_error("Example3"));
+	//dot::future<int> fut3(std::runtime_error("Example3"));
+	auto fut3 = dot::make_ready_future<int>(std::runtime_error("Example3"));
 	auto fut4 = fut3.then(
-		[](ex::future<int> n){
+		[](dot::future<int> n){
 			std::cout << "exception continuation: " << n.get() << std::endl;
 			return 1;
 		}
