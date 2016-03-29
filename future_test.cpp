@@ -271,7 +271,7 @@ TEST_F(FutureTest, set_and_then)
 			return 42;
 		}
 	).then(
-		[&counter](dot::future<auto> fut) {
+		[&counter](auto fut) {
 			counter++; // 5
 			EXPECT_EQ(fut.get(), 42);
 			throw std::runtime_error("error");

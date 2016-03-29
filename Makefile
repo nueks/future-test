@@ -1,13 +1,16 @@
-CXXFLAGS=-g -std=c++14 -pthread -lgtest
-LDFLAGS=-lgtest -lm
-LDLIBS=-lm -lgtest
+CXXFLAGS=-g -std=c++14
+LDFLAGS=-lgtest -pthread
+CC=g++
+TARGET=future_test
 
-all: main
+all: $(TARGET)
 
-main: main.cpp future_test.o
+future_test: future_test.o main.o
+future_test.o: future_test.cpp future.hpp
 
-future_test.o: future_test.cpp
+main.o: main.cpp
 
 clean:
-	rm *.o main
+	rm *.o $(TARGET)
+
 .PHONY: clean

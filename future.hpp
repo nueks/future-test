@@ -18,11 +18,14 @@ namespace dot
 template <typename... T>
 class future;
 
+
 template <typename... T>
 class promise;
 
+
 struct ready_future_marker {};
 struct exception_future_marker {};
+
 
 enum class future_status
 {
@@ -31,8 +34,10 @@ enum class future_status
 	deferred
 };
 
+
 template <typename... T>
 struct futurize;
+
 
 class spinlock
 {
@@ -45,7 +50,6 @@ public:
 	void lock()	{ while (lock_.test_and_set(std::memory_order_acquire)); }
 	void unlock() { lock_.clear(std::memory_order_release);	}
 };
-
 
 
 class task
@@ -169,8 +173,11 @@ private:
 };
 
 template <>
-struct promise<void> : public promise<> {};
-
+struct promise<void> : public promise<> {
+	using promise<>::promise;
+	promise(promise<>&& x) : promise<>(std::move(x)) {}
+	promise() : promise<>() {}
+};
 
 
 template <typename... T>
@@ -193,6 +200,8 @@ class future
 {
 	template <typename... U>
 	friend class promise;
+	template <typename... U>
+	friend class future;
 
 private:
 	using impl_type = typename future_impl<T...>::type;
@@ -238,22 +247,20 @@ public:
 
 	template <typename... A>
 	future(ready_future_marker, A&&... a) noexcept
-	{
-		set(std::forward<A>(a)...);
-	}
+		: value_(std::tuple<T...>(std::forward<A>(a)...)),
+		  state_(state::result)
+	{}
 
 	future(exception_future_marker, std::exception_ptr ex) noexcept
-	{
-		set_exception(std::move(ex));
-	}
+		: ex_(std::move(ex)),
+		  state_(state::exception)
+	{}
 
 	template <typename Exception>
 	future(exception_future_marker, Exception&& ex) noexcept
-	{
-		set_exception(
-			std::make_exception_ptr(std::forward<Exception>(ex))
-		);
-	}
+		: ex_(std::make_exception_ptr(std::forward<Exception>(ex))),
+		  state_(state::exception)
+	{}
 
 	future(const future&) = delete;
 
@@ -289,8 +296,15 @@ public:
 			case state::future_ready:
 				return impl_.get();
 			case state::result:
+			{
+				state_ = state::invalid;
+				return get_value_impl<T...>(std::move(value_));
+			}
 			case state::exception:
-				return get_value();
+			{
+				state_ = state::invalid;
+				std::rethrow_exception(std::move(ex_));
+			}
 			default:
 				abort();
 		}
@@ -408,6 +422,18 @@ public:
 		}
 	}
 
+private:
+	template <typename Func>
+	void schedule(Func&& func)
+	{
+		auto tmp = promise_;
+		promise_ = nullptr;
+		tmp->continuation_ = std::make_unique<continuation<Func, future> >(
+			std::forward<Func>(func), std::move(*this)
+		);
+		tmp->future_ = nullptr;
+	}
+
 	template <typename U = result_type>
 	std::enable_if_t<!std::is_same<U, void>::value, void>
 	forward_to(promise<T...>& pr)
@@ -423,46 +449,6 @@ public:
 		pr.set_value();
 	}
 
-private:
-	template <typename Func>
-	void schedule(Func&& func)
-	{
-		auto tmp = promise_;
-		promise_ = nullptr;
-		tmp->continuation_ = std::make_unique<continuation<Func, future> >(
-			std::forward<Func>(func), std::move(*this)
-		);
-		tmp->future_ = nullptr;
-	}
-
-	template <typename... A>
-	void set(A&&... a)
-	{
-		assert(state_ == state::future);
-		value_ = std::tuple<T...>(std::forward<A>(a)...);
-		state_ = state::result;
-	}
-
-	void set_exception(std::exception_ptr ex) noexcept
-	{
-		assert(state_ == state::future);
-		ex_ = std::move(ex);
-		state_ = state::exception;
-	}
-
-	result_type get_value()
-	{
-		assert(state_ != state::future);
-		promise_ = nullptr;
-		if (state_ == state::exception)
-		{
-			state_ = state::invalid;
-			std::rethrow_exception(std::move(ex_));
-		}
-
-		state_ = state::invalid;
-		return get_value_impl<T...>(std::move(value_));
-	}
 };
 
 template <>
@@ -470,8 +456,8 @@ struct future<void> : public future<>
 {
 	using future<>::future;
 	future(future<>&& x) : future<>(std::move(x)) {}
+	future() : future<>() {}
 };
-
 
 
 template <typename... T>
@@ -513,7 +499,6 @@ struct futurize
 {
 	using type = typename futurize_future<T...>::type;
 	using promise_type = typename futurize_promise<T...>::type;
-
 
 	template <typename Func, typename Arg>
 	static inline std::enable_if_t<!std::is_same<std::result_of_t<Func(Arg)>, void>::value, type>
