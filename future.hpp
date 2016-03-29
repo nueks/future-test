@@ -47,8 +47,8 @@ private:
 public:
 	spinlock() = default;
 	~spinlock() = default;
-	void lock()	{ while (lock_.test_and_set(std::memory_order_acquire)); }
-	void unlock() { lock_.clear(std::memory_order_release);	}
+	inline void lock()	{ while (lock_.test_and_set(std::memory_order_acquire)); }
+	inline void unlock() { lock_.clear(std::memory_order_release);	}
 };
 
 
@@ -133,20 +133,20 @@ public:
 	}
 
 	template <typename... A>
-	void set_value(A&&... a)
+	inline void set_value(A&&... a)
 	{
 		impl_.set_value(std::forward<A>(a)...);
 		notify();
 	}
 
-	void set_exception(std::exception_ptr ex)
+	inline void set_exception(std::exception_ptr ex)
 	{
 		impl_.set_exception(ex);
 		notify();
 	}
 
 	template <typename Exception>
-	void set_exception(Exception&& ex)
+	inline void set_exception(Exception&& ex)
 	{
 		impl_.set_exception(
 			std::make_exception_ptr(std::forward<Exception>(ex))
@@ -191,9 +191,9 @@ template <>
 struct future_result<> { using type = void; };
 
 template <typename... T, typename R = typename future_result<T...>::type>
-R get_value_impl(std::tuple<T...>&& x) { return std::get<0>(std::move(x)); };
+inline R get_value_impl(std::tuple<T...>&& x) { return std::get<0>(std::move(x)); };
 template <>
-void get_value_impl(std::tuple<>&& x) {	return; };
+inline void get_value_impl(std::tuple<>&& x) {	return; };
 
 template <typename... T>
 class future
@@ -331,14 +331,14 @@ public:
 			impl_.wait();
 	}
 
-	void set_ready() noexcept
+	inline void set_ready() noexcept
 	{
 		assert(state_ == state::future);
 		state_ = state::future_ready;
 		//promise_ = nullptr;
 	}
 
-	bool ready() const
+	inline bool ready() const
 	{
 		switch (state_)
 		{
@@ -435,14 +435,14 @@ private:
 	}
 
 	template <typename U = result_type>
-	std::enable_if_t<!std::is_same<U, void>::value, void>
+	inline std::enable_if_t<!std::is_same<U, void>::value, void>
 	forward_to(promise<T...>& pr)
 	{
 		pr.set_value(get());
 	}
 
 	template<typename U = result_type>
-	std::enable_if_t<std::is_same<U, void>::value, void>
+	inline std::enable_if_t<std::is_same<U, void>::value, void>
 	forward_to(promise<T...>& pr)
 	{
 		get();
