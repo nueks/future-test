@@ -283,8 +283,50 @@ public:
 		return *this;
 	}
 
+	// result_type get()
+	// {
+	// 	switch (state_)
+	// 	{
+	// 		case state::invalid:
+	// 		{
+	// 			std::error_code ec(std::make_error_code(std::future_errc::no_state));
+	// 			throw std::future_error(ec);
+	// 		}
+	// 		case state::future:
+	// 		//case state::future_ready:
+	// 			return impl_.get();
+	// 		case state::result:
+	// 		{
+	// 			state_ = state::invalid;
+	// 			return get_value_impl<T...>(std::move(value_));
+	// 		}
+	// 		case state::exception:
+	// 		{
+	// 			state_ = state::invalid;
+	// 			std::rethrow_exception(std::move(ex_));
+	// 		}
+	// 		default:
+	// 			abort();
+	// 	}
+	// }
+
 	result_type get()
 	{
+		std::unique_lock<spinlock> lock;
+		if (promise_)
+		{
+			lock = std::unique_lock<spinlock>(promise_->lock_);
+		}
+
+		if (state_ == state::future)
+		{
+			impl_.wait();
+			set_ready();
+			lock.unlock();
+			promise_ = nullptr;
+
+		}
+
 		switch (state_)
 		{
 			case state::invalid:
@@ -292,9 +334,6 @@ public:
 				std::error_code ec(std::make_error_code(std::future_errc::no_state));
 				throw std::future_error(ec);
 			}
-			case state::future:
-			//case state::future_ready:
-				return impl_.get();
 			case state::result:
 			{
 				state_ = state::invalid;
@@ -305,8 +344,10 @@ public:
 				state_ = state::invalid;
 				std::rethrow_exception(std::move(ex_));
 			}
+			case state::future:
 			default:
 				abort();
+
 		}
 	}
 
@@ -340,7 +381,7 @@ public:
 	inline std::enable_if_t<!std::is_same<U, void>::value, void>
 	set_ready() noexcept
 	{
-		assert(state_ == state::future);
+		if (state_ != state::future) return;
 		try
 		{
 			value_ = std::tuple<T...>(impl_.get());
@@ -357,7 +398,7 @@ public:
 	inline std::enable_if_t<std::is_same<U, void>::value, void>
 	set_ready() noexcept
 	{
-		assert(state_ == state::future);
+		if (state_ != state::future) return;
 		try
 		{
 			impl_.get();

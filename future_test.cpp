@@ -338,12 +338,26 @@ TEST_F(FutureTest, then_and_set)
 	EXPECT_EQ(counter, 6);
 }
 
-TEST_F(FutureTest, set_get)
+TEST_F(FutureTest, set_and_get)
 {
 	dot::promise<int> pr;
 	pr.set_value(13);
 	auto fut = pr.get_future();
 	EXPECT_EQ(fut.get(), 13);
+}
+
+TEST_F(FutureTest, get_and_set)
+{
+	auto pr = dot::promise<int>();
+	auto fut = pr.get_future();
+	auto run = async(
+		[pr = std::move(pr)]() mutable {
+			usleep(1000);
+			pr.set_value(13);
+		}
+	);
+	EXPECT_EQ(fut.get(), 13);
+	run.get();
 }
 
 TEST_F(FutureTest, wait)
