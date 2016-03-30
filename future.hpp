@@ -214,7 +214,7 @@ private:
 	{
 		invalid,
 		future,
-		future_ready,
+		//future_ready,
 		result,
 		exception,
 	} state_{state::future};
@@ -293,7 +293,7 @@ public:
 				throw std::future_error(ec);
 			}
 			case state::future:
-			case state::future_ready:
+			//case state::future_ready:
 				return impl_.get();
 			case state::result:
 			{
@@ -315,7 +315,7 @@ public:
 		switch (state_)
 		{
 			case state::future:
-			case state::future_ready:
+			//case state::future_ready:
 				return impl_.valid();
 			case state::result:
 			case state::exception:
@@ -325,17 +325,49 @@ public:
 		}
 	}
 
+	bool failed() const
+	{
+		return state_ == state::exception;
+	}
+
 	void wait() const
 	{
 		if (state_ == state::future)
 			impl_.wait();
 	}
 
-	inline void set_ready() noexcept
+	template <typename U = result_type>
+	inline std::enable_if_t<!std::is_same<U, void>::value, void>
+	set_ready() noexcept
 	{
 		assert(state_ == state::future);
-		state_ = state::future_ready;
-		//promise_ = nullptr;
+		try
+		{
+			value_ = std::tuple<T...>(impl_.get());
+			state_ = state::result;
+		}
+		catch (...)
+		{
+			ex_ = std::current_exception();
+			state_ = state::exception;
+		}
+	}
+
+	template <typename U = result_type>
+	inline std::enable_if_t<std::is_same<U, void>::value, void>
+	set_ready() noexcept
+	{
+		assert(state_ == state::future);
+		try
+		{
+			impl_.get();
+			state_ = state::result;
+		}
+		catch (...)
+		{
+			ex_ = std::current_exception();
+			state_ = state::exception;
+		}
 	}
 
 	inline bool ready() const
@@ -345,7 +377,7 @@ public:
 			case state::invalid:
 			case state::future:
 				return false;
-			case state::future_ready:
+			//case state::future_ready:
 			case state::result:
 			case state::exception:
 				return true;
@@ -357,7 +389,7 @@ public:
 	template <typename Rep, typename Period>
 	future_status wait_for(const std::chrono::duration<Rep, Period>& timeout_duration) const
 	{
-		if (state_ == state::future || state_ == state::future_ready)
+		if (state_ == state::future)// || state_ == state::future_ready)
 			return static_cast<future_status>(impl_.wait_for(timeout_duration));
 		return future_status::ready;
 	}
@@ -365,7 +397,7 @@ public:
 	template <typename Clock, typename Duration>
 	future_status wait_until(const std::chrono::time_point<Clock, Duration>& timeout_time) const
 	{
-		if (state_ == state::future || state_ == state::future_ready)
+		if (state_ == state::future)// || state_ == state::future_ready)
 			return static_cast<future_status>(impl_.wait_until(timeout_time));
 		return future_status::ready;
 	}
@@ -385,7 +417,7 @@ public:
 		{
 			case state::result:
 			case state::exception:
-			case state::future_ready:
+			//case state::future_ready:
 			{
 				if (promise_) lock.unlock();
 				promise_ = nullptr;
