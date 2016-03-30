@@ -352,13 +352,13 @@ TEST_F(FutureTest, wait)
 	auto fut = pr.get_future();
 	auto run = async(
 		[pr = std::move(pr)]() mutable {
-			usleep(1000000);
+			usleep(100000);
 			pr.set_exception(std::runtime_error("error"));
 		}
 	);
 	using namespace std::literals::chrono_literals;
 	{
-		dot::future_status st = fut.wait_for(500ms);
+		dot::future_status st = fut.wait_for(50ms);
 		EXPECT_EQ(st, dot::future_status::timeout);
 	}
 	{
