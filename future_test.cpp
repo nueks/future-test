@@ -89,6 +89,26 @@ TEST(ReadyFutureTest, then)
 	EXPECT_EQ(counter, 6);
 }
 
+TEST(ReadyFutureTest, failed)
+{
+	auto f1 = dot::make_ready_future<>();
+	EXPECT_FALSE(f1.failed());
+
+	auto f2 = dot::make_exception_future<>(std::runtime_error("f2"));
+	EXPECT_TRUE(f2.failed());
+
+	dot::make_ready_future<>().then(
+		[](auto fut) {
+			EXPECT_FALSE(fut.failed());
+			throw std::runtime_error("fut1");
+		}
+	).then(
+		[](auto fut) {
+			EXPECT_TRUE(fut.failed());
+		}
+	);
+}
+
 
 struct FutureTest : public ::testing::Test
 {
@@ -381,4 +401,22 @@ TEST_F(FutureTest, wait)
 	}
 	run.get();
 	EXPECT_THROW(fut.get(), std::runtime_error);
+}
+
+TEST_F(FutureTest, failed)
+{
+	auto pr = dot::promise<int>();
+	auto fut = pr.get_future();
+	auto run = async(
+		[pr = std::move(pr)]() mutable {
+			usleep(1000);
+			pr.set_exception(std::runtime_error("error"));
+		}
+	);
+
+	fut.then(
+		[](auto fut) {
+			EXPECT_TRUE(fut.failed());
+		}
+	);
 }

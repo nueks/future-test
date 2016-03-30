@@ -55,6 +55,7 @@ public:
 class task
 {
 public:
+	virtual void ready() = 0;
 	virtual void run() noexcept = 0;
 };
 
@@ -65,6 +66,11 @@ struct continuation : public task
 		: func_(std::move(func)),
 		  arg_(std::move(arg))
 	{}
+
+	virtual void ready() override
+	{
+		arg_.set_ready();
+	}
 
 	virtual void run() noexcept override
 	{
@@ -166,6 +172,7 @@ private:
 		else if (continuation_)
 		{
 			lock.unlock();
+			continuation_->ready();
 			continuation_->run();
 			continuation_ = nullptr;
 		}
@@ -312,19 +319,17 @@ public:
 
 	result_type get()
 	{
-		std::unique_lock<spinlock> lock;
 		if (promise_)
 		{
-			lock = std::unique_lock<spinlock>(promise_->lock_);
-		}
+			auto lock = std::unique_lock<spinlock>(promise_->lock_);
 
-		if (state_ == state::future)
-		{
-			impl_.wait();
-			set_ready();
-			lock.unlock();
-			promise_ = nullptr;
-
+			if (state_ == state::future)
+			{
+				impl_.wait();
+				set_ready();
+				lock.unlock();
+				promise_ = nullptr;
+			}
 		}
 
 		switch (state_)
