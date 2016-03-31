@@ -221,7 +221,6 @@ private:
 	{
 		invalid,
 		future,
-		//future_ready,
 		result,
 		exception,
 	} state_{state::future};
@@ -290,33 +289,6 @@ public:
 		return *this;
 	}
 
-	// result_type get()
-	// {
-	// 	switch (state_)
-	// 	{
-	// 		case state::invalid:
-	// 		{
-	// 			std::error_code ec(std::make_error_code(std::future_errc::no_state));
-	// 			throw std::future_error(ec);
-	// 		}
-	// 		case state::future:
-	// 		//case state::future_ready:
-	// 			return impl_.get();
-	// 		case state::result:
-	// 		{
-	// 			state_ = state::invalid;
-	// 			return get_value_impl<T...>(std::move(value_));
-	// 		}
-	// 		case state::exception:
-	// 		{
-	// 			state_ = state::invalid;
-	// 			std::rethrow_exception(std::move(ex_));
-	// 		}
-	// 		default:
-	// 			abort();
-	// 	}
-	// }
-
 	result_type get()
 	{
 		if (promise_)
@@ -327,7 +299,7 @@ public:
 			{
 				impl_.wait();
 				set_ready();
-				lock.unlock();
+				promise_->future_ = nullptr;
 				promise_ = nullptr;
 			}
 		}
@@ -352,7 +324,6 @@ public:
 			case state::future:
 			default:
 				abort();
-
 		}
 	}
 
@@ -361,7 +332,6 @@ public:
 		switch (state_)
 		{
 			case state::future:
-			//case state::future_ready:
 				return impl_.valid();
 			case state::result:
 			case state::exception:
@@ -423,7 +393,6 @@ public:
 			case state::invalid:
 			case state::future:
 				return false;
-			//case state::future_ready:
 			case state::result:
 			case state::exception:
 				return true;
@@ -435,7 +404,7 @@ public:
 	template <typename Rep, typename Period>
 	future_status wait_for(const std::chrono::duration<Rep, Period>& timeout_duration) const
 	{
-		if (state_ == state::future)// || state_ == state::future_ready)
+		if (state_ == state::future)
 			return static_cast<future_status>(impl_.wait_for(timeout_duration));
 		return future_status::ready;
 	}
@@ -443,7 +412,7 @@ public:
 	template <typename Clock, typename Duration>
 	future_status wait_until(const std::chrono::time_point<Clock, Duration>& timeout_time) const
 	{
-		if (state_ == state::future)// || state_ == state::future_ready)
+		if (state_ == state::future)
 			return static_cast<future_status>(impl_.wait_until(timeout_time));
 		return future_status::ready;
 	}
@@ -463,7 +432,6 @@ public:
 		{
 			case state::result:
 			case state::exception:
-			//case state::future_ready:
 			{
 				if (promise_) lock.unlock();
 				promise_ = nullptr;
