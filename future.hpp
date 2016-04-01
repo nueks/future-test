@@ -10,6 +10,7 @@
 #include <memory>
 #include <atomic>
 #include <vector>
+#include <algorithm>
 
 #pragma once
 
@@ -102,6 +103,7 @@ private:
 	future<T...>* future_{nullptr};
 	std::unique_ptr<task> continuation_{nullptr};
 	spinlock lock_;
+	std::atomic<bool> set_{false};
 
 public:
 	promise() noexcept {}
@@ -120,9 +122,7 @@ public:
 	~promise() noexcept
 	{
 		if (future_)
-		{
 			future_->promise_ = nullptr;
-		}
 	}
 
 	promise& operator=(promise&& x) noexcept
@@ -165,6 +165,7 @@ public:
 private:
 	void notify()
 	{
+		set_ = true;
 		std::unique_lock<spinlock> lock(lock_);
 		if (future_)
 		{
@@ -247,10 +248,17 @@ public:
 	}
 
 	future(promise<T...>* pr)
-		: impl_(pr->impl_.get_future()),
-		  promise_(pr)
+		: impl_(pr->impl_.get_future())
 	{
-		promise_->future_ = this;
+		if (pr->set_)
+		{
+			set_ready();
+		}
+		else
+		{
+			promise_ = pr;
+			promise_->future_ = this;
+		}
 	}
 
 	template <typename... A>
