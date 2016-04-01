@@ -109,7 +109,13 @@ TEST(ReadyFutureTest, failed)
 	);
 }
 
-TEST(ReadyFutureTest, when_all)
+TEST(ReadyFutureTest, when_all_empty)
+{
+	auto f = dot::when_all();
+	EXPECT_EQ(name(typeid(f)), "dot::future<std::tuple<> >");
+}
+
+TEST(ReadyFutureTest, when_all_tuple)
 {
 	auto x = dot::make_ready_future<int>(1);
 	auto y = dot::make_ready_future<int>(2);
