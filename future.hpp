@@ -9,6 +9,7 @@
 #include <cassert>
 #include <memory>
 #include <atomic>
+#include <vector>
 
 #pragma once
 
@@ -596,7 +597,6 @@ template <>
 class futurize<void> : public futurize<> {};
 
 
-
 template <typename... Futures>
 struct when_all_context
 {
@@ -609,13 +609,12 @@ struct when_all_context
 	{
 		pro.set_value(std::move(results));
 	}
-	template <typename T, size_t I>
-	void set_result(T t)
-	{
-		std::get<I>(results) = std::move(t);
-	}
+	// template <typename T, size_t I>
+	// void set_result(T t)
+	// {
+	// 	std::get<I>(results) = std::move(t);
+	// }
 };
-
 
 template <template <typename...> class T, typename... Ts>
 inline void when_all_helper(const std::shared_ptr<T<Ts...> >&)
@@ -629,18 +628,50 @@ inline void when_all_helper(const std::shared_ptr<T<Ts...> >& ctx,
 {
 	auto t = head.then(
 		[ctx](Head f) {
-			ctx->template set_result<Head, sizeof...(Ts) - sizeof...(Tail) - 1>(std::move(f));
+			//ctx->template set_result<Head, sizeof...(Ts) - sizeof...(Tail) - 1>(std::move(f));
+			std::get<sizeof...(Ts) - sizeof...(Tail) - 1>(ctx->results) = std::move(f);
 		}
 	);
 	when_all_helper(ctx, std::forward<Tail>(tail)...);
 }
 
+// variadic version when_all
 template <typename... Futures>
 inline future<std::tuple<Futures...> >
 when_all(Futures&&... futs)
 {
 	auto ctx = std::make_shared<when_all_context<Futures...> >();
 	when_all_helper(ctx, std::forward<Futures>(futs)...);
+	return ctx->pro.get_future();
+}
+
+// iterator version when_all
+template <typename Iterator,
+		  typename T = typename std::iterator_traits<Iterator>::value_type>
+inline future<std::vector<T> >
+when_all(Iterator begin, Iterator end)
+{
+	struct context
+	{
+		promise<std::vector<T> > pro;
+		std::vector<T> results;
+
+		context(int n) : results(n) {}
+		~context()
+		{
+			pro.set_value(std::move(results));
+		}
+	};
+
+	auto ctx = std::make_shared<context>(std::distance(begin, end));
+	for (size_t i = 0; begin != end; ++begin, ++i)
+	{
+		begin->then(
+			[i, ctx](auto fut) {
+				ctx->results[i] = std::move(fut);
+			}
+		);
+	}
 	return ctx->pro.get_future();
 }
 

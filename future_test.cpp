@@ -120,12 +120,31 @@ TEST(ReadyFutureTest, when_all_tuple)
 	auto x = dot::make_ready_future<int>(1);
 	auto y = dot::make_ready_future<int>(2);
 	when_all(std::move(x), std::move(y)).then(
-		[](auto fut){
+		[](auto fut) {
 			dot::future<int> x;
 			dot::future<int> y;
 			std::tie(x, y) = fut.get();
 			EXPECT_EQ(x.get(), 1);
 			EXPECT_EQ(y.get(), 2);
+		}
+	);
+}
+
+TEST(ReadyFutureTest, when_all_iterator)
+{
+	std::vector<dot::future<int> > futures;
+	futures.push_back(dot::make_ready_future(1));
+	futures.push_back(dot::make_ready_future(2));
+	futures.push_back(dot::make_ready_future(3));
+
+	dot::when_all(begin(futures), end(futures)).then(
+		[](auto fut) {
+			auto vec = fut.get();
+			auto i = 1;
+			for (auto f = begin(vec); f == end(vec); f++, i++)
+			{
+				EXPECT_EQ(f->get(), i);
+			}
 		}
 	);
 }
@@ -451,13 +470,11 @@ TEST_F(FutureTest, when_all_tuple)
 	auto f2 = p2.get_future();
 	auto f3 = p3.get_future();
 
-	auto fut = dot::when_all(std::move(f1), std::move(f2), std::move(f3));
-	fut.then(
+	dot::when_all(std::move(f1), std::move(f2), std::move(f3)).then(
 		[](auto fut) {
 			dot::future<int> x;
 			dot::future<bool> y;
 			dot::future<> z;
-
 			std::tie(x, y, z) = fut.get();
 
 			EXPECT_EQ(x.get(), 13);
@@ -466,15 +483,43 @@ TEST_F(FutureTest, when_all_tuple)
 		}
 	);
 
-	auto r1 = async(
+	execute(
 		[p1 = std::move(p1), p2 = std::move(p2), p3 = std::move(p3)]() mutable {
-			usleep(10000);
 			p1.set_value(13);
-			usleep(3000);
 			p2.set_value(true);
 			p3.set_exception(std::runtime_error("test"));
 		}
 	);
+}
 
-	r1.get();
+TEST_F(FutureTest, when_all_iterator)
+{
+	std::vector<dot::promise<int> > promises(3);
+	std::vector<dot::future<int> > futures;
+	for (auto& p : promises)
+	{
+		futures.push_back(p.get_future());
+	}
+
+	dot::when_all(begin(futures), end(futures)).then(
+		[](auto fut) {
+			auto vec = fut.get();
+			auto i = 1;
+			for (auto f = begin(vec); f == end(vec); f++, i++)
+			{
+				EXPECT_EQ(f->get(), i);
+			}
+		}
+	);
+
+	execute(
+		[promises = std::move(promises)]() mutable {
+			auto i = 1;
+			for (auto p = begin(promises); p == end(promises); p++, i++)
+			{
+				p->set_value(i);
+			}
+		}
+	);
+
 }
