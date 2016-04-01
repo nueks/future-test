@@ -342,6 +342,11 @@ public:
 		}
 	}
 
+	bool available() const
+	{
+		return state_ == state::result || state_ == state::exception;
+	}
+
 	bool failed() const
 	{
 		return state_ == state::exception;
@@ -589,5 +594,54 @@ struct futurize
 
 template <>
 class futurize<void> : public futurize<> {};
+
+
+
+template <typename... Futures>
+struct when_all_context
+{
+	using type = std::tuple<Futures...>;
+	type results;
+	promise<type> pro;
+
+	when_all_context() = default;
+	~when_all_context()
+	{
+		pro.set_value(std::move(results));
+	}
+	template <typename T, size_t I>
+	void set_result(T t)
+	{
+		std::get<I>(results) = std::move(t);
+	}
+};
+
+
+template <template <typename...> class T, typename... Ts>
+inline void when_all_helper(const std::shared_ptr<T<Ts...> >&)
+{
+}
+
+template <template <typename...> class T, typename... Ts,
+		  typename Head, typename... Tail>
+inline void when_all_helper(const std::shared_ptr<T<Ts...> >& ctx,
+					 Head&& head, Tail&&... tail)
+{
+	auto t = head.then(
+		[ctx](Head f) {
+			ctx->template set_result<Head, sizeof...(Ts) - sizeof...(Tail) - 1>(std::move(f));
+		}
+	);
+	when_all_helper(ctx, std::forward<Tail>(tail)...);
+}
+
+template <typename... Futures>
+inline future<std::tuple<Futures...> >
+when_all(Futures&&... futs)
+{
+	auto ctx = std::make_shared<when_all_context<Futures...> >();
+	when_all_helper(ctx, std::forward<Futures>(futs)...);
+	return ctx->pro.get_future();
+}
 
 } // namespace dot

@@ -109,6 +109,21 @@ TEST(ReadyFutureTest, failed)
 	);
 }
 
+TEST(ReadyFutureTest, when_all)
+{
+	auto x = dot::make_ready_future<int>(1);
+	auto y = dot::make_ready_future<int>(2);
+	when_all(std::move(x), std::move(y)).then(
+		[](auto fut){
+			dot::future<int> x;
+			dot::future<int> y;
+			std::tie(x, y) = fut.get();
+			EXPECT_EQ(x.get(), 1);
+			EXPECT_EQ(y.get(), 2);
+		}
+	);
+}
+
 
 struct FutureTest : public ::testing::Test
 {
@@ -419,4 +434,41 @@ TEST_F(FutureTest, failed)
 			EXPECT_TRUE(fut.failed());
 		}
 	);
+}
+
+TEST_F(FutureTest, when_all_tuple)
+{
+	auto p1 = dot::promise<int>();
+	auto p2 = dot::promise<bool>();
+	auto p3 = dot::promise<>();
+	auto f1 = p1.get_future();
+	auto f2 = p2.get_future();
+	auto f3 = p3.get_future();
+
+	auto fut = dot::when_all(std::move(f1), std::move(f2), std::move(f3));
+	fut.then(
+		[](auto fut) {
+			dot::future<int> x;
+			dot::future<bool> y;
+			dot::future<> z;
+
+			std::tie(x, y, z) = fut.get();
+
+			EXPECT_EQ(x.get(), 13);
+			EXPECT_EQ(y.get(), true);
+			EXPECT_THROW(z.get(), std::runtime_error);
+		}
+	);
+
+	auto r1 = async(
+		[p1 = std::move(p1), p2 = std::move(p2), p3 = std::move(p3)]() mutable {
+			usleep(10000);
+			p1.set_value(13);
+			usleep(3000);
+			p2.set_value(true);
+			p3.set_exception(std::runtime_error("test"));
+		}
+	);
+
+	r1.get();
 }
