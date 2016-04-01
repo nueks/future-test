@@ -55,6 +55,7 @@ public:
 class task
 {
 public:
+	virtual ~task() {};
 	virtual void ready() = 0;
 	virtual void run() noexcept = 0;
 };
