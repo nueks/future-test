@@ -124,7 +124,7 @@ TEST(ReadyFutureTest, when_all_empty)
 	EXPECT_EQ(name(typeid(f)), "dot::future<std::tuple<> >");
 }
 
-TEST(ReadyFutureTest, when_all_tuple)
+TEST(ReadyFutureTest, when_all_variadic)
 {
 	auto x = dot::make_ready_future<int>(1);
 	auto y = dot::make_ready_future<int>(2);
@@ -154,6 +154,23 @@ TEST(ReadyFutureTest, when_all_iterator)
 			{
 				EXPECT_EQ(f->get(), i);
 			}
+		}
+	);
+}
+
+TEST(ReadyFutureTest, when_any_variadic)
+{
+	auto x = dot::make_ready_future(1);
+	auto y = dot::make_ready_future(2);
+	when_any(std::move(x), std::move(y)).then(
+		[](auto fut) {
+			dot::future<int> x;
+			dot::future<int> y;
+			std::tie(x, y) = fut.get();
+
+			EXPECT_TRUE(x.ready());
+			EXPECT_FALSE(y.ready());
+			EXPECT_EQ(x.get(), 1);
 		}
 	);
 }
@@ -490,7 +507,7 @@ TEST_F(FutureTest, failed)
 	);
 }
 
-TEST_F(FutureTest, when_all_tuple)
+TEST_F(FutureTest, when_all_variadic)
 {
 	auto p1 = dot::promise<int>();
 	auto p2 = dot::promise<bool>();
@@ -548,6 +565,37 @@ TEST_F(FutureTest, when_all_iterator)
 			{
 				p->set_value(i);
 			}
+		}
+	);
+}
+
+TEST_F(FutureTest, when_any_variadic)
+{
+	auto p1 = dot::promise<>();
+	auto p2 = dot::promise<bool>();
+	auto p3 = dot::promise<int>();
+	auto f1 = p1.get_future();
+	auto f2 = p2.get_future();
+	auto f3 = p3.get_future();
+
+	dot::when_any(std::move(f1), std::move(f2), std::move(f3)).then(
+		[](auto fut) {
+			dot::future<> x;
+			dot::future<bool> y;
+			dot::future<int> z;
+			std::tie(x, y, z) = fut.get();
+			EXPECT_FALSE(x.ready());
+			EXPECT_FALSE(y.ready());
+			EXPECT_TRUE(z.ready());
+			EXPECT_EQ(z.get(), 13);
+		}
+	);
+
+	execute(
+		[p1 = std::move(p1), p2 = std::move(p2), p3 = std::move(p3)]() mutable {
+			//p1.set_value();
+			//p2.set_value(true);
+			p3.set_value(13);
 		}
 	);
 }

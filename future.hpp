@@ -695,6 +695,48 @@ when_all(Iterator begin, Iterator end)
 	return ctx->pro.get_future();
 }
 
+
+template <typename... Futures>
+struct when_any_context
+{
+	using type = std::tuple<Futures...>;
+	type futs;
+	promise<type> pro;
+	std::atomic<bool> done{false};
+};
+
+template <template <typename...> class T, typename... Ts>
+inline void when_any_helper(const std::shared_ptr<T<Ts...> >&)
+{
+}
+
+template <template <typename...> class T, typename... Ts,
+		  typename Head, typename... Tail>
+inline void when_any_helper(const std::shared_ptr<T<Ts...> >& ctx,
+					 Head&& head, Tail&&... tail)
+{
+	auto t = head.then(
+		[ctx](Head f) {
+			if (!ctx->done.exchange(true))
+			{
+				std::get<sizeof...(Ts) - sizeof...(Tail) - 1>(ctx->futs) = std::move(f);
+				ctx->pro.set_value(std::move(ctx->futs));
+			}
+		}
+	);
+	when_any_helper(ctx, std::forward<Tail>(tail)...);
+}
+
+// variadic version when_any
+template <typename... Futures>
+inline future<std::tuple<Futures...> >
+when_any(Futures&&... futs)
+{
+	auto ctx = std::make_shared<when_any_context<Futures...> >();
+	when_any_helper(ctx, std::forward<Futures>(futs)...);
+	return ctx->pro.get_future();
+}
+
 // iterator version when_any
 template <typename Iterator,
 		  typename T = typename std::iterator_traits<Iterator>::value_type>
