@@ -48,6 +48,15 @@ TEST(ReadyFutureTest, void_get)
 	EXPECT_THROW(fut.get(), std::future_error);
 }
 
+TEST(ReadyFutureTest, return_future)
+{
+	dot::make_ready_future(13).then(
+		[](auto fut) {
+			return dot::make_ready_future(42);
+		}
+	);
+}
+
 TEST(ReadyFutureTest, then)
 {
 	auto counter = int{0};

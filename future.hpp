@@ -547,19 +547,10 @@ inline future<T...> make_exception_future(Exception&& ex) noexcept
 
 
 template <typename... T>
-struct futurize_future { using type = future<T...>; };
-template <typename... T>
-struct futurize_future<future<T...> > { using type = future<T...>; };
-template <typename... T>
-struct futurize_promise { using type = promise<T...>; };
-template <typename... T>
-struct futurize_promise<future<T...> > { using type = promise<T...>; };
-
-template <typename... T>
 struct futurize
 {
-	using type = typename futurize_future<T...>::type;
-	using promise_type = typename futurize_promise<T...>::type;
+	using type = future<T...>;
+	using promise_type = promise<T...>;
 
 	template <typename Func, typename Arg>
 	static inline std::enable_if_t<!std::is_same<std::result_of_t<Func(Arg)>, void>::value, type>
@@ -593,6 +584,26 @@ struct futurize
 	static inline type convert(T&&... value)
 	{
 		return make_ready_future<T...>(std::move(value)...);
+	}
+};
+
+template <typename... T>
+struct futurize<future<T...> >
+{
+	using type = future<T...>;
+	using promise_type = promise<T...>;
+
+	template <typename Func, typename Arg>
+	static inline type apply(Func&& func, Arg&& arg) noexcept
+	{
+		try
+		{
+			return convert(std::forward<Func>(func)(std::forward<Arg>(arg)));
+		}
+		catch (...)
+		{
+			return make_exception_future<T...>(std::current_exception());
+		}
 	}
 
 	static inline type convert(type&& value)
