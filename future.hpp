@@ -351,10 +351,10 @@ public:
 		}
 	}
 
-	bool available() const
-	{
-		return state_ == state::result || state_ == state::exception;
-	}
+	// bool available() const
+	// {
+	// 	return state_ == state::result || state_ == state::exception;
+	// }
 
 	bool failed() const
 	{
@@ -403,17 +403,18 @@ public:
 
 	inline bool ready() const
 	{
-		switch (state_)
-		{
-			case state::invalid:
-			case state::future:
-				return false;
-			case state::result:
-			case state::exception:
-				return true;
-			default:
-				abort();
-		}
+		return state_ == state::result || state_ == state::exception;
+		// switch (state_)
+		// {
+		// 	case state::invalid:
+		// 	case state::future:
+		// 		return false;
+		// 	case state::result:
+		// 	case state::exception:
+		// 		return true;
+		// 	default:
+		// 		abort();
+		// }
 	}
 
 	template <typename Rep, typename Period>
@@ -688,6 +689,40 @@ when_all(Iterator begin, Iterator end)
 		begin->then(
 			[i, ctx](auto fut) {
 				ctx->results[i] = std::move(fut);
+			}
+		);
+	}
+	return ctx->pro.get_future();
+}
+
+// iterator version when_any
+template <typename Iterator,
+		  typename T = typename std::iterator_traits<Iterator>::value_type>
+inline future<std::vector<T> >
+when_any(Iterator begin, Iterator end)
+{
+	struct context
+	{
+		promise<std::vector<T> > pro;
+		std::vector<T> futs;
+		std::atomic<bool> done{false};
+	};
+
+	auto ctx = std::make_shared<context>();
+	std::move(begin, end, std::back_inserter(ctx->futs));
+
+	size_t idx = 0;
+	auto first = ctx->futs.begin();
+	auto last = ctx->futs.end();
+	for (auto i = first; i != last; ++i, ++idx)
+	{
+		i->then(
+			[idx, ctx](auto fut) {
+				if (!ctx->done.exchange(true))
+				{
+					ctx->futs[idx] = std::move(fut);
+					ctx->pro.set_value(std::move(ctx->futs));
+				}
 			}
 		);
 	}

@@ -158,6 +158,26 @@ TEST(ReadyFutureTest, when_all_iterator)
 	);
 }
 
+TEST(ReadyFutureTest, when_any_iterator)
+{
+	std::vector<dot::future<int> > futures;
+	futures.push_back(dot::make_ready_future(1));
+	futures.push_back(dot::make_ready_future(2));
+	futures.push_back(dot::make_ready_future(3));
+
+	dot::when_any(begin(futures), end(futures)).then(
+		[](auto fut) {
+			auto vec = fut.get();
+
+			EXPECT_TRUE(vec[0].ready());
+			EXPECT_FALSE(vec[1].ready());
+			EXPECT_FALSE(vec[2].ready());
+
+			EXPECT_EQ(vec[0].get(), 1);
+		}
+	);
+}
+
 
 struct FutureTest : public ::testing::Test
 {
@@ -530,5 +550,30 @@ TEST_F(FutureTest, when_all_iterator)
 			}
 		}
 	);
+}
 
+TEST_F(FutureTest, when_any_iterator)
+{
+	std::vector<dot::promise<int> > promises(3);
+	std::vector<dot::future<int> > futures;
+	for (auto& p : promises)
+	{
+		futures.push_back(p.get_future());
+	}
+
+	dot::when_any(begin(futures), end(futures)).then(
+		[](auto fut) {
+			auto vec = fut.get();
+			EXPECT_FALSE(vec[0].ready());
+			EXPECT_TRUE(vec[1].ready());
+			EXPECT_FALSE(vec[2].ready());
+			EXPECT_EQ(vec[1].get(), 42);
+		}
+	);
+
+	execute(
+		[promises = std::move(promises)]() mutable {
+			promises[1].set_value(42);
+		}
+	);
 }
