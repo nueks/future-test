@@ -1,16 +1,12 @@
-#include <iostream>
-#include <cstdlib>
-#include <thread>
 #include <future>
 #include <exception>
-#include <unistd.h>
 #include <thread>
 #include <chrono>
 #include <cassert>
 #include <memory>
 #include <atomic>
 #include <vector>
-#include <algorithm>
+#include <iterator>
 
 #pragma once
 
@@ -351,11 +347,6 @@ public:
 		}
 	}
 
-	// bool available() const
-	// {
-	// 	return state_ == state::result || state_ == state::exception;
-	// }
-
 	bool failed() const
 	{
 		return state_ == state::exception;
@@ -404,17 +395,6 @@ public:
 	inline bool ready() const
 	{
 		return state_ == state::result || state_ == state::exception;
-		// switch (state_)
-		// {
-		// 	case state::invalid:
-		// 	case state::future:
-		// 		return false;
-		// 	case state::result:
-		// 	case state::exception:
-		// 		return true;
-		// 	default:
-		// 		abort();
-		// }
 	}
 
 	template <typename Rep, typename Period>
@@ -629,11 +609,6 @@ struct when_all_context
 	{
 		pro.set_value(std::move(results));
 	}
-	// template <typename T, size_t I>
-	// void set_result(T t)
-	// {
-	// 	std::get<I>(results) = std::move(t);
-	// }
 };
 
 template <template <typename...> class T, typename... Ts>
@@ -648,7 +623,6 @@ inline void when_all_helper(const std::shared_ptr<T<Ts...> >& ctx,
 {
 	auto t = head.then(
 		[ctx](Head f) {
-			//ctx->template set_result<Head, sizeof...(Ts) - sizeof...(Tail) - 1>(std::move(f));
 			std::get<sizeof...(Ts) - sizeof...(Tail) - 1>(ctx->results) = std::move(f);
 		}
 	);
@@ -700,7 +674,7 @@ template <typename... Futures>
 struct when_any_context
 {
 	using type = std::tuple<Futures...>;
-	type futs;
+	type results;
 	promise<type> pro;
 	std::atomic<bool> done{false};
 };
@@ -719,8 +693,8 @@ inline void when_any_helper(const std::shared_ptr<T<Ts...> >& ctx,
 		[ctx](Head f) {
 			if (!ctx->done.exchange(true))
 			{
-				std::get<sizeof...(Ts) - sizeof...(Tail) - 1>(ctx->futs) = std::move(f);
-				ctx->pro.set_value(std::move(ctx->futs));
+				std::get<sizeof...(Ts) - sizeof...(Tail) - 1>(ctx->results) = std::move(f);
+				ctx->pro.set_value(std::move(ctx->results));
 			}
 		}
 	);
@@ -746,29 +720,33 @@ when_any(Iterator begin, Iterator end)
 	struct context
 	{
 		promise<std::vector<T> > pro;
-		std::vector<T> futs;
+		std::vector<T> results;
 		std::atomic<bool> done{false};
+		context(int n) : results(n) {}
 	};
 
-	auto ctx = std::make_shared<context>();
-	std::move(begin, end, std::back_inserter(ctx->futs));
+	auto ctx = std::make_shared<context>(std::distance(begin, end));
 
-	size_t idx = 0;
-	auto first = ctx->futs.begin();
-	auto last = ctx->futs.end();
-	for (auto i = first; i != last; ++i, ++idx)
+	size_t i = 0;
+	for (auto f = begin; f != end; ++f, ++i)
 	{
-		i->then(
-			[idx, ctx](auto fut) {
+		f->then(
+			[i, ctx](auto fut) {
 				if (!ctx->done.exchange(true))
 				{
-					ctx->futs[idx] = std::move(fut);
-					ctx->pro.set_value(std::move(ctx->futs));
+					ctx->results[i] = std::move(fut);
+					ctx->pro.set_value(std::move(ctx->results));
 				}
 			}
 		);
 	}
 	return ctx->pro.get_future();
 }
+
+
+// TODO:
+// for_each
+// map
+// reduce
 
 } // namespace dot
