@@ -50,11 +50,9 @@ public:
 };
 
 
-class task
+struct task
 {
-public:
 	virtual ~task() {};
-	virtual void ready() = 0;
 	virtual void run() noexcept = 0;
 };
 
@@ -66,13 +64,9 @@ struct continuation : public task
 		  arg_(std::move(arg))
 	{}
 
-	virtual void ready() override
-	{
-		arg_.set_ready();
-	}
-
 	virtual void run() noexcept override
 	{
+		arg_.set_ready();
 		func_(std::move(arg_));
 	}
 
@@ -171,7 +165,6 @@ private:
 		else if (continuation_)
 		{
 			lock.unlock();
-			continuation_->ready();
 			continuation_->run();
 			continuation_ = nullptr;
 		}
