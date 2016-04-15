@@ -1,2 +1,3 @@
 /future_test
 /*.o
+/circular_buffer_test
