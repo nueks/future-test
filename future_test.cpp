@@ -625,3 +625,69 @@ TEST_F(FutureTest, when_any_iterator)
 		}
 	);
 }
+
+dot::future<> readable()
+{
+	std::cout << std::this_thread::get_id() << " readable" << std::endl;
+	dot::promise<> pro;
+	dot::future<> fut = pro.get_future();
+	std::thread t(
+		[pro = std::move(pro)]() mutable{
+			std::cout << std::this_thread::get_id() << " readable thread"<< std::endl;
+			sleep(2);
+			pro.set_value();
+		}
+	);
+	t.detach();
+	return fut;
+}
+
+dot::future<int> recv()
+{
+	return readable().then(
+		[](auto fut){
+			std::cout << std::this_thread::get_id() << " readable continuation" << std::endl;
+			return dot::make_ready_future<int>(1);
+		}
+	);
+}
+
+TEST_F(FutureTest, fake_recv)
+{
+	std::cout << std::this_thread::get_id() << " before recv" << std::endl;
+	auto f1 = recv().then(
+		[](auto fut){
+			std::cout << std::this_thread::get_id() << " first recved" << std::endl;
+		}
+	);
+	auto f2 = recv().then(
+		[](auto fut){
+			std::cout << std::this_thread::get_id() << " second recved" << std::endl;
+		}
+	);
+	dot::when_all(std::move(f1), std::move(f2)).get();
+	std::cout << std::this_thread::get_id() << " after recv" << std::endl;
+}
+
+void accept()
+{
+	readable().then(
+		[](auto fut){
+			std::cout << std::this_thread::get_id() << " accepted" << std::endl;
+			recv().then(
+				[](auto fut){
+					std::cout << std::this_thread::get_id() << " recv in accept" << std::endl;
+				}
+			);
+			accept();
+		}
+	);
+}
+
+TEST_F(FutureTest, fake_accept)
+{
+	std::cout << std::this_thread::get_id() << " before accept" << std::endl;
+	accept();
+	sleep(10);
+	std::cout << std::this_thread::get_id() << " after accept" << std::endl;
+}
